@@ -42,6 +42,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/wind.bin
+      - name: Lebenszeichen
+        # GitHub schaltet Zeitpläne in öffentlichen Repositorys nach 60 Tagen ohne Änderung ab; ein kleiner Stand im
+        # Zweig „stand“ (ersetzt sich jedes Mal selbst) zählt als Änderung.
+        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        run: bash werkzeug/ergebnis.sh stand out/wind.bin.json
       - name: Ergebnis ablegen
         if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
         run: bash werkzeug/ergebnis.sh ergebnis-wind out/wind.bin
