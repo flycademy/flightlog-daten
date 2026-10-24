@@ -1,0 +1,43 @@
+# Ortsnamen aus GeoNames — monatlich (GeoNames ändert sich langsam) und von Hand
+name: Orte
+on:
+  schedule:
+    - cron: "41 3 2 * *"
+  workflow_dispatch:
+    inputs:
+      hochladen:
+        description: "auf den Server hochladen"
+        type: boolean
+        default: true
+      ergebnis:
+        description: "Ergebnis zusätzlich im Zweig ergebnis-orte ablegen"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  orte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Orte aufbereiten
+        run: python -m fcy_daten.orte --aus out/orte.bin
+      - name: Prüfen
+        run: python -m fcy_daten.pruefen orte out/orte.bin
+      - name: Hochladen
+        if: github.event_name == 'schedule' || inputs.hochladen
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+        run: python -m fcy_daten.hochladen out/orte.bin orte.bin
+      - name: Ergebnis ablegen
+        if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
+        run: bash werkzeug/ergebnis.sh ergebnis-orte out/orte.bin

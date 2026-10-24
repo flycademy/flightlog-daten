@@ -1,0 +1,41 @@
+# Geländekacheln aus Copernicus DEM GLO-90 — nur von Hand (die Daten ändern sich nicht)
+name: Gelände
+on:
+  workflow_dispatch:
+    inputs:
+      hochladen:
+        description: "auf den Server hochladen"
+        type: boolean
+        default: true
+      ergebnis:
+        description: "Ergebnis zusätzlich im Zweig ergebnis-gelaende ablegen"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  gelaende:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Gelände rechnen
+        run: python -m fcy_daten.gelaende --aus out/gelaende.bin
+      - name: Prüfen
+        run: python -m fcy_daten.pruefen gelaende out/gelaende.bin
+      - name: Hochladen
+        if: inputs.hochladen
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+        run: python -m fcy_daten.hochladen out/gelaende.bin gelaende.bin
+      - name: Ergebnis ablegen
+        if: inputs.ergebnis
+        run: bash werkzeug/ergebnis.sh ergebnis-gelaende out/gelaende.bin

@@ -1,0 +1,4 @@
+numpy>=1.26
+eccodes>=2.38
+rasterio>=1.4
+requests>=2.31
