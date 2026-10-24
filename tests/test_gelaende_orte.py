@@ -40,14 +40,27 @@ def test_gelaende():
         g = np.full((3600, 3600), 20.0); g[1799, 1801] = 999.0
         nm = gelaende.cop_name(51, 11); os.makedirs(os.path.join(q, nm))
         tif(os.path.join(q, nm, nm + ".tif"), 51, 11, 3600, 3600, g)
+        # Gipfel (GeoNames-Format): 1150 m eine Zelle neben dem 999-m-Gipfel → anheben; 900 m dort → nichts;
+        # 1100 m im Flachen (20 m) → mehr als 250 m darüber → überspringen; Meerkachel und außerhalb → nichts
+        def gn(gid, name, la, lo, fc, h):
+            return "\t".join([gid, name, name, "", str(la), str(lo), "T", fc, "DE", "", "", "", "", "", "0", str(h), "", "Europe/Berlin", "2026-01-01"])
+        gz_ = io.BytesIO()
+        with zipfile.ZipFile(gz_, "w") as zf:
+            zf.writestr("allCountries.txt", "\n".join([
+                gn("1", "Nebengipfel", 51.50417, 11.5125, "PK", 1150), gn("2", "Vorgipfel", 51.5045, 11.5042, "MT", 900),
+                gn("3", "Fehlhöhe", 51.2, 11.2, "HLL", 1100), gn("4", "Seeberg", 52.5, 11.5, "MT", 300),
+                gn("5", "Fern", 40.0, 11.5, "MT", 3000), gn("6", "Kein Berg", 51.3, 11.3, "STM", 2000)]) + "\n")
+        open(os.path.join(q, "allCountries.zip"), "wb").write(gz_.getvalue())
         s = server(q)
         aus = os.path.join(tmp, "g.bin")
-        rc = gelaende.main(["--aus", aus, "--lat", "51", "53", "--lon", "10", "12", "--quelle", f"http://127.0.0.1:{s.server_address[1]}"])
+        url = f"http://127.0.0.1:{s.server_address[1]}"
+        rc = gelaende.main(["--aus", aus, "--lat", "51", "53", "--lon", "10", "12", "--quelle", url, "--gipfel", url + "/allCountries.zip"])
         s.shutdown()
         assert rc == 0
         d = open(aus, "rb").read()
         k = F.kopf_lesen(d, b"FCYG")
         assert (k["kacheln_land"], k["kacheln_meer"], k["kacheln_fehlt"]) == (3, 1, 0)
+        assert (k["gipfel"]["angehoben"], k["gipfel"]["uebersprungen"]) == (1, 1), k["gipfel"]
         t = F.lese_gelaende_kachel(d, 52, 10)
         # Pixel (605, 401): Mitte bei 53 − 605,5/1200 → Zeile floor(605,5/10) = 60; Länge 401,5/800 → Spalte floor(60,225) = 60
         assert t[60, 60] == 777 and t[60, 61] == 50 and t[59, 60] == 50, t[58:62, 58:62]
@@ -58,7 +71,8 @@ def test_gelaende():
         assert (e[0] == np.arange(120) * 10 + 9).all() and (e[:, 5] == 59).all()
         g = F.lese_gelaende_kachel(d, 51, 11)
         # 30 × 30 Pixel je Zelle: Zeile floor(1799,5/30) = 59, Spalte floor(1801,5/30) = 60
-        assert g[59, 60] == 999 and g.max() == 999 and (g == 20).sum() == 120 * 120 - 1, g[58:61, 58:62]
+        assert g[59, 60] == 999 and g[59, 61] == 1150 and g.max() == 1150 and (g == 20).sum() == 120 * 120 - 2, g[58:61, 58:63]
+        assert g[96, 24] == 20                                                     # Fehlhöhe übersprungen
         assert F.lese_gelaende_kachel(d, 50, 10) is None
         print("ok: Gelände")
 

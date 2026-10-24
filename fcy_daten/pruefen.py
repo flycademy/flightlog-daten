@@ -76,8 +76,11 @@ def pruefe_wind(pfad: str, vergleich: bool) -> bool:
     A = np.stack(alle).astype(float)         # n, schritt, hoehe, 3
     A[A == -128] = np.nan
     a5 = list(K["hoehen_ft"]).index(5000)
-    fehlt5 = float(np.isnan(A[:, :, a5, 0]).mean())
-    ok &= melde(fehlt5 < 0.10, f"5000 ft: {fehlt5:.1%} der Stichprobe fehlt (unter Gelände, höchstens 10 %)")
+    innen = ~np.isnan(A[:, :, -1, 0])          # in 14 000 ft vorhanden = im Modellgebiet (die Ecken des Rechtecks liegen außerhalb)
+    aussen = 1.0 - float(innen.mean())
+    fehlt5 = float(np.isnan(A[:, :, a5, 0])[innen].mean())
+    ok &= melde(aussen < 0.35, f"außerhalb des ICON-D2-Gebiets: {aussen:.1%} der Stichprobe (Ecken des Rechtecks, höchstens 35 %)")
+    ok &= melde(fehlt5 < 0.10, f"5000 ft: {fehlt5:.1%} der Punkte im Gebiet fehlen (unter Gelände, höchstens 10 %)")
     sp = np.hypot(A[..., 0], A[..., 1])
     ok &= melde(np.nanmax(sp) < 160 and np.nanmean(sp) > 2, f"Windgeschwindigkeit Mittel {np.nanmean(sp):.1f} kt, höchstens {np.nanmax(sp):.0f} kt")
     t = A[..., 2]
@@ -146,7 +149,8 @@ def pruefe_gelaende(pfad: str) -> bool:
     K = F.kopf_lesen(d, b"FCYG")
     ok = melde(K["kacheln_fehlt"] == 0, f"{K['kacheln_land']} Land-, {K['kacheln_meer']} Meerkacheln, {K['kacheln_fehlt']} fehlen")
     ziele = [("Brocken", 51.7991, 10.6156, 1130, 1160), ("Zugspitze", 47.4211, 10.9853, 2930, 2975),
-             ("Großglockner", 47.0742, 12.6947, 3770, 3810), ("EDVE", 52.3192, 10.5561, 75, 110), ("Nordsee", 54.5, 6.5, -5, 5)]
+             ("Großglockner", 47.0742, 12.6947, 3770, 3810), ("Matterhorn", 45.9763, 7.6586, 4440, 4490),
+             ("Mont Blanc", 45.8326, 6.8652, 4780, 4820), ("EDVE", 52.3192, 10.5561, 75, 110), ("Nordsee", 54.5, 6.5, -5, 5)]
     for name, la, lo, mn, mx in ziele:
         if not (K["lat0"] <= la < K["lat1"] and K["lon0"] <= lo < K["lon1"]):
             continue
@@ -160,6 +164,9 @@ def pruefe_gelaende(pfad: str) -> bool:
             r = int((math.floor(la) + 1 - la) * K["n"]); c = int((lo - math.floor(lo)) * K["n"])
             v = int(t[max(0, r - 1):r + 2, max(0, c - 1):c + 2].max())
         ok &= melde(v is not None and mn <= v <= mx, f"{name}: {v} m (erwartet {mn}–{mx})")
+    g = K.get("gipfel")
+    if g:
+        print(f"   Gipfel aus GeoNames: {g['angehoben']} Zellen angehoben, {g['uebersprungen']} übersprungen (mehr als {g['grenze_m']} m über dem Gelände)")
     return ok
 
 
