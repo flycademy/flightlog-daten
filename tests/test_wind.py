@@ -35,11 +35,21 @@ def test_wind_ende_zu_ende():
         open(csvp, "w").write(synth.PLAETZE_CSV)
         s = server(wurzel)
         aus = os.path.join(tmp, "wind.bin")
+        cache = os.path.join(tmp, "cache", "hhl.npz")
         rc = wind.main(["--aus", aus, "--quelle", f"http://127.0.0.1:{s.server_address[1]}",
-                        "--jetzt", "2026-10-24T14:10:00", "--plaetze", csvp, "--threads", "8"])
+                        "--jetzt", "2026-10-24T14:10:00", "--plaetze", csvp, "--threads", "8", "--hhl-cache", cache])
+        assert rc == 0 and os.path.exists(cache)
+        # zweiter Lauf mit den Flächenhöhen aus dem Zwischenspeicher (wie jeder Lauf nach dem ersten auf GitHub)
+        aus2 = os.path.join(tmp, "wind2.bin")
+        rc = wind.main(["--aus", aus2, "--quelle", f"http://127.0.0.1:{s.server_address[1]}",
+                        "--jetzt", "2026-10-24T14:10:00", "--plaetze", csvp, "--threads", "8", "--hhl-cache", cache])
         s.shutdown()
         assert rc == 0
         daten = open(aus, "rb").read()
+        d2 = open(aus2, "rb").read()
+        k1, k2 = F.kopf_lesen(daten, b"FCYW"), F.kopf_lesen(d2, b"FCYW")
+        assert d2[F.KOPF_BYTES:] == daten[F.KOPF_BYTES:] and {x: k1[x] for x in k1 if x != "erzeugt"} == {x: k2[x] for x in k2 if x != "erzeugt"}, \
+            "Lauf mit Zwischenspeicher weicht ab"
         K = F.kopf_lesen(daten, b"FCYW")
         assert K["lauf"] == "2026-10-24T12:00:00Z"
         g = K["gitter"]

@@ -26,8 +26,15 @@ FEHLT_I16 = -32768       # Bodenwerte am Platz: fehlt
 # ----------------------------------------------------------------------------------------------
 # gemeinsam
 # ----------------------------------------------------------------------------------------------
+def _json_zahl(o):
+    """numpy-Zahlen und -Felder im Kopf als gewöhnliche Zahlen/Listen schreiben."""
+    if hasattr(o, "tolist"):
+        return o.tolist()
+    raise TypeError(f"{type(o).__name__} lässt sich nicht als JSON schreiben")
+
+
 def _kopf_schreiben(f, kennung: bytes, kopf: dict) -> None:
-    js = json.dumps(kopf, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    js = json.dumps(kopf, ensure_ascii=False, separators=(",", ":"), default=_json_zahl).encode("utf-8")
     if len(js) + 8 > KOPF_BYTES:
         raise ValueError(f"Kopf zu groß ({len(js)} Byte)")
     f.seek(0)

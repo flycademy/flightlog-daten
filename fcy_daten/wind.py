@@ -138,7 +138,7 @@ def hhl_laden(q: Quelle, lauf: str, cache: str | None = None):
     """Höhen der Halbflächen (zeitunabhängig). Mit cache: einmal laden, danach aus der Datei (GitHub-Actions-Cache)."""
     if cache and os.path.exists(cache):
         z = np.load(cache, allow_pickle=False)
-        return list(z["ebenen"]), z["hhl"], json.loads(str(z["gitter"]))
+        return [int(e) for e in z["ebenen"]], z["hhl"], json.loads(str(z["gitter"]))   # int, nicht numpy.int64 (JSON-Kopf)
     e, h, g = _hhl_holen(q, lauf)
     if cache:
         os.makedirs(os.path.dirname(cache) or ".", exist_ok=True)
