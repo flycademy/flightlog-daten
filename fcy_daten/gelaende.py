@@ -1,10 +1,11 @@
-"""Geländekacheln für die MSA des Flight Log aus Copernicus DEM GLO-90.
+"""Geländekacheln für die MSA des Flight Log aus Copernicus DEM GLO-30.
 
 Je 1°-Kachel 120 × 120 Zellen (30″, rund 0,5 NM); Zellwert = HÖCHSTER Geländepunkt der Zelle in m (aufgerundet).
 Copernicus-Kacheln, die es nicht gibt, sind Meer. Ausgabe: gelaende.bin (Format: format.py).
 
 Aufruf: python -m fcy_daten.gelaende --aus out/gelaende.bin [--lat 35 60] [--lon -10 30] [--quelle URL]
-Quelle: Copernicus DEM GLO-90 (AWS Open Data). © DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018,
+Quelle: Copernicus DEM GLO-30 (AWS Open Data). GLO-30 statt GLO-90, weil GLO-90 gemittelt ist und spitze Gipfel
+um über 100 m zu niedrig wiedergibt (Großglockner 3668 statt 3798 m). © DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018,
 bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA; alle Rechte vorbehalten.
 """
 from __future__ import annotations
@@ -20,12 +21,12 @@ from rasterio.io import MemoryFile
 from . import format as F
 from . import netz
 
-QUELLE = "https://copernicus-dem-90m.s3.amazonaws.com"
+QUELLE = "https://copernicus-dem-30m.s3.amazonaws.com"
 N = 120
 
 
 def cop_name(lat: int, lon: int) -> str:
-    return (f"Copernicus_DSM_COG_30_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_"
+    return (f"Copernicus_DSM_COG_10_{'N' if lat >= 0 else 'S'}{abs(lat):02d}_00_"
             f"{'E' if lon >= 0 else 'W'}{abs(lon):03d}_00_DEM")
 
 
@@ -70,7 +71,7 @@ def main(argv=None):
     ap.add_argument("--lat", type=int, nargs=2, default=[35, 60])
     ap.add_argument("--lon", type=int, nargs=2, default=[-10, 30])
     ap.add_argument("--quelle", default=QUELLE)
-    ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--threads", type=int, default=12)
     a = ap.parse_args(argv)
 
     jobs = [(la, lo) for la in range(a.lat[0], a.lat[1]) for lo in range(a.lon[0], a.lon[1])]
@@ -79,7 +80,7 @@ def main(argv=None):
         la, lo = job
         nm = cop_name(la, lo)
         try:
-            tif = netz.hole(f"{a.quelle.rstrip('/')}/{nm}/{nm}.tif", ok404=True, timeout=120)
+            tif = netz.hole(f"{a.quelle.rstrip('/')}/{nm}/{nm}.tif", ok404=True, timeout=300)
         except RuntimeError as e:
             print(f"  {F.kachel_name(la, lo)}: Fehler {e}", flush=True)
             return job, None
@@ -91,7 +92,7 @@ def main(argv=None):
     for n, (job, k) in enumerate(netz.parallel(eine, jobs, threads=a.threads)):
         kacheln[job] = k
     kopf = {"lat0": a.lat[0], "lat1": a.lat[1], "lon0": a.lon[0], "lon1": a.lon[1], "n": N,
-            "quelle": "Copernicus DEM GLO-90 (© DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, "
+            "quelle": "Copernicus DEM GLO-30 (© DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, "
                       "bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA)",
             "erzeugt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     k = F.schreibe_gelaende(a.aus, kopf, kacheln)

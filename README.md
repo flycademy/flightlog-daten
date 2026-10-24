@@ -7,7 +7,7 @@ spricht mit DWD, Copernicus oder GeoNames.
 | Job | Quelle | Wann | Datei auf dem Server |
 | --- | --- | --- | --- |
 | Wind ICON-D2 | Deutscher Wetterdienst, ICON-D2 (opendata.dwd.de) | alle 3 Stunden | `private/flightlog/daten/wx/wind.bin` |
-| Gelände | Copernicus DEM GLO-90 (AWS Open Data) | von Hand, einmal | `private/flightlog/daten/gelaende.bin` |
+| Gelände | Copernicus DEM GLO-30 (AWS Open Data) | von Hand, einmal | `private/flightlog/daten/gelaende.bin` |
 | Orte | GeoNames (download.geonames.org) | monatlich | `private/flightlog/daten/orte.bin` |
 
 ## Was die Jobs rechnen
@@ -49,6 +49,6 @@ So sieht der Flight Log nie eine halbe Datei.
 ## Lizenzen der Daten
 
 - **Wind:** Quelle Deutscher Wetterdienst. Die Daten sind verändert: auf feste Höhen und ein 0,1°-Gitter umgerechnet.
-- **Gelände:** Copernicus DEM GLO-90. © DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA. Die Daten sind verändert: Höchstwert je Zelle.
+- **Gelände:** Copernicus DEM GLO-30. © DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA. Die Daten sind verändert: Höchstwert je Zelle.
 - **Orte:** GeoNames, CC BY 4.0.
 - **Flugplätze:** OurAirports, gemeinfrei.

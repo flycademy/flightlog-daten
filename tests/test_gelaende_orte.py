@@ -28,7 +28,7 @@ def tif(pfad, lat, lon, h, w, werte, nodata=None):
 def test_gelaende():
     with tempfile.TemporaryDirectory() as tmp:
         q = os.path.join(tmp, "s3")
-        # N52E010: 1200 × 800 Pixel (wie GLO-90 zwischen 50 und 60° N), flach 50 m, Gipfel 777 m bei Pixel (605, 401)
+        # N52E010: 1200 × 800 Pixel (Seitenverhältnis wie zwischen 50 und 60° N), flach 50 m, Gipfel 777 m bei Pixel (605, 401)
         a = np.full((1200, 800), 50.0); a[605, 401] = 777.0; a[0:3, 0:3] = -32767.0   # Ecke ohne Daten
         nm = gelaende.cop_name(52, 10); os.makedirs(os.path.join(q, nm))
         tif(os.path.join(q, nm, nm + ".tif"), 52, 10, 1200, 800, a, nodata=-32767.0)
@@ -36,6 +36,10 @@ def test_gelaende():
         b = np.tile(np.arange(1200, dtype=float), (1200, 1))
         nm = gelaende.cop_name(51, 10); os.makedirs(os.path.join(q, nm))
         tif(os.path.join(q, nm, nm + ".tif"), 51, 10, 1200, 1200, b)
+        # N51E011: 3600 × 3600 wie GLO-30 bis 50° N, flach 20 m, Gipfel 999 m bei Pixel (1799, 1801)
+        g = np.full((3600, 3600), 20.0); g[1799, 1801] = 999.0
+        nm = gelaende.cop_name(51, 11); os.makedirs(os.path.join(q, nm))
+        tif(os.path.join(q, nm, nm + ".tif"), 51, 11, 3600, 3600, g)
         s = server(q)
         aus = os.path.join(tmp, "g.bin")
         rc = gelaende.main(["--aus", aus, "--lat", "51", "53", "--lon", "10", "12", "--quelle", f"http://127.0.0.1:{s.server_address[1]}"])
@@ -43,7 +47,7 @@ def test_gelaende():
         assert rc == 0
         d = open(aus, "rb").read()
         k = F.kopf_lesen(d, b"FCYG")
-        assert (k["kacheln_land"], k["kacheln_meer"], k["kacheln_fehlt"]) == (2, 2, 0)
+        assert (k["kacheln_land"], k["kacheln_meer"], k["kacheln_fehlt"]) == (3, 1, 0)
         t = F.lese_gelaende_kachel(d, 52, 10)
         # Pixel (605, 401): Mitte bei 53 − 605,5/1200 → Zeile floor(605,5/10) = 60; Länge 401,5/800 → Spalte floor(60,225) = 60
         assert t[60, 60] == 777 and t[60, 61] == 50 and t[59, 60] == 50, t[58:62, 58:62]
@@ -52,6 +56,9 @@ def test_gelaende():
         e = F.lese_gelaende_kachel(d, 51, 10)
         # Zelle j umfasst die Spalten 10j … 10j+9 → Maximum 10j + 9
         assert (e[0] == np.arange(120) * 10 + 9).all() and (e[:, 5] == 59).all()
+        g = F.lese_gelaende_kachel(d, 51, 11)
+        # 30 × 30 Pixel je Zelle: Zeile floor(1799,5/30) = 59, Spalte floor(1801,5/30) = 60
+        assert g[59, 60] == 999 and g.max() == 999 and (g == 20).sum() == 120 * 120 - 1, g[58:61, 58:62]
         assert F.lese_gelaende_kachel(d, 50, 10) is None
         print("ok: Gelände")
 
