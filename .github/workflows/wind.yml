@@ -34,9 +34,9 @@ jobs:
           path: cache
           key: hhl-icon-d2-v1
       - name: Wind rechnen
-        run: python -m fcy_daten.wind --aus out/wind.bin --hhl-cache cache/hhl.npz
+        run: bash werkzeug/lauf.sh python -m fcy_daten.wind --aus out/wind.bin --hhl-cache cache/hhl.npz
       - name: Prüfen
-        run: python -m fcy_daten.pruefen wind out/wind.bin --vergleich
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen wind out/wind.bin --vergleich
       - name: Hochladen
         if: github.event_name == 'schedule' || inputs.hochladen
         env:
@@ -44,7 +44,7 @@ jobs:
           FTP_USER: ${{ secrets.FTP_USER }}
           FTP_PASS: ${{ secrets.FTP_PASS }}
           FTP_DIR: ${{ secrets.FTP_DIR }}
-        run: python -m fcy_daten.hochladen out/wind.bin wx/wind.bin
+        run: bash werkzeug/lauf.sh python -m fcy_daten.hochladen out/wind.bin wx/wind.bin
       - name: Ergebnis ablegen
         if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
         run: bash werkzeug/ergebnis.sh ergebnis-wind out/wind.bin
