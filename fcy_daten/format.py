@@ -243,18 +243,22 @@ def php_tabelle() -> str:
 
 
 def schreibe_orte(pfad: str, kopf: dict, zeilen: list[tuple]) -> dict:
-    """zeilen: (schluessel, id, name, land1, cc, lat, lon, einwohner, klasse)"""
+    """zeilen: (schluessel, id, name, land1, cc, lat, lon, einwohner, klasse[, teil])
+
+    teil = 1: der Schlüssel ist nur ein inneres Wort des Namens („harzburg“ für „Bad Harzburg“); solche Treffer
+    sortiert der Dienst nach den Treffern, deren Name mit dem Suchtext beginnt."""
     def sauber(x):
         return str(x).replace("\t", " ").replace("\n", " ")
     roh = sorted({(z[0].encode("utf-8"),) + tuple(z[1:]) for z in zeilen if z[0]}, key=lambda z: (z[0], -int(z[7] or 0), str(z[1])))
     kopf = dict(kopf)
-    kopf.update({"format": "FCYO", "version": 1, "spalten": ["schluessel", "id", "name", "land1", "cc", "lat", "lon", "einwohner", "klasse"]})
+    kopf.update({"format": "FCYO", "version": 1, "spalten": ["schluessel", "id", "name", "land1", "cc", "lat", "lon", "einwohner", "klasse", "teil"]})
     with open(pfad, "w+b") as f:
         f.write(b"\0" * KOPF_BYTES)
         pos = []
         for z in roh:
             pos.append(f.tell())
-            line = b"\t".join([z[0]] + [sauber(x).encode("utf-8") for x in (z[1], z[2], z[3], z[4], f"{float(z[5]):.4f}", f"{float(z[6]):.4f}", int(z[7] or 0), z[8])]) + b"\n"
+            line = b"\t".join([z[0]] + [sauber(x).encode("utf-8") for x in (z[1], z[2], z[3], z[4], f"{float(z[5]):.4f}", f"{float(z[6]):.4f}", int(z[7] or 0), z[8],
+                                                                         int(z[9]) if len(z) > 9 else 0)]) + b"\n"
             f.write(line)
         index_ab = f.tell()
         f.write(b"".join(struct.pack("<I", p) for p in pos))

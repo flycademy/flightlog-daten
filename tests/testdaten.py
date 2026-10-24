@@ -82,15 +82,15 @@ ORTE = [
 def orte_zeilen():
     rows = []
     for name, land1, cc, la, lo, ew, kl, gid in ORTE:
-        keys = {F.normiere(name)}
+        keys = {F.normiere(name): 0}
+        if name == "München":
+            keys.update({"munich": 0, "monaco di baviera": 0})
         for k in list(keys):
             for w in k.split(" ")[1:]:
-                if len(w) >= 4:
-                    keys.add(w)
-        if name == "München":
-            keys |= {"munich", "monaco di baviera"}
-        for k in keys:
-            rows.append((k, gid, name, land1, cc, la, lo, ew, kl))
+                if len(w) >= 4 and w not in keys:
+                    keys[w] = 1
+        for k, teil in keys.items():
+            rows.append((k, gid, name, land1, cc, la, lo, ew, kl, teil))
     return rows
 
 

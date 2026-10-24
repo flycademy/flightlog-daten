@@ -66,7 +66,7 @@ def test_gelaende():
 def test_orte():
     with tempfile.TemporaryDirectory() as tmp:
         q = os.path.join(tmp, "gn"); os.makedirs(q)
-        open(os.path.join(q, "admin1CodesASCII.txt"), "w").write("DE.06\tLower Saxony\tLower Saxony\t1\nDE.02\tBavaria\tBavaria\t2\n")
+        open(os.path.join(q, "admin1CodesASCII.txt"), "w").write("DE.06\tLower Saxony\tLower Saxony\t1\nDE.02\tBavaria\tBavaria\t2\nDE.01\tBaden-Wurttemberg\tBaden-Wurttemberg\t3\n")
         rows = [
             ["2945024", "Braunschweig", "Braunschweig", "Brunswick,Brunsvicum", "52.26594", "10.52673", "P", "PPLA2", "DE", "", "06", "", "", "", "248292"],
             ["2867714", "Munich", "Munich", "Monaco di Baviera,München,Mnichov", "48.13743", "11.57549", "P", "PPLA", "DE", "", "02", "", "", "", "1260391"],
@@ -83,7 +83,8 @@ def test_orte():
         alt = io.BytesIO()
         with zipfile.ZipFile(alt, "w") as zf:
             zf.writestr("alternateNamesV2.txt", "1\t2867714\tde\tMünchen\t1\t\t\t\t\t\n2\t2867714\tde\tMuenchen\t\t\t1\t\t\t\n"
-                        "3\t2945024\ten\tBrunswick\t1\t\t\t\t\t\n4\t9999999\tde\tAnderswo\t1\t\t\t\t\t\n")
+                        "3\t2945024\ten\tBrunswick\t1\t\t\t\t\t\n4\t9999999\tde\tAnderswo\t1\t\t\t\t\t\n"
+                        "5\t1\tde\tNiedersachsen\t1\t\t\t\t\t\n6\t2\tde\tFreistaat Bayern\t1\t\t\t\t\t\n")
         open(os.path.join(q, "alternateNamesV2.zip"), "wb").write(alt.getvalue())
         s = server(q)
         aus = os.path.join(tmp, "o.bin")
@@ -106,6 +107,12 @@ def test_orte():
         assert "waggum" in kk and kk["waggum"][8] == b"X"
         assert "brocken" in kk and "steinhuder meer" in kk and "altes dorf" not in kk
         assert "brunswick" in kk           # über 20 000 Einwohner: andere Namen
+        assert kk["munchen"][3].decode() == "Bayern"                      # deutscher Regionsname ohne „Freistaat“
+        assert kk["harzburg"][9] == b"1" and kk["bad harzburg"][9] == b"0" and kk["munchen"][9] == b"0"   # inneres Wort
+        assert orte.regionsname("Municipality of Bled") == "Bled" and orte.regionsname("Bekes County") == "Bekes"
+        assert orte.regionsname("Kanton Zürich") == "Zürich" and orte.regionsname("Woiwodschaft Niederschlesien") == "Niederschlesien"
+        assert orte.admin1_namen({"X.1": ("Baden-Wurttemberg", "3"), "X.2": ("Lombardy", "4")}, {"4": "Lombardei"}) == \
+            {"X.1": "Baden-Württemberg", "X.2": "Lombardei"}
         print("ok: Orte", len(ks), "Schlüssel")
 
 

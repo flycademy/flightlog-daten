@@ -10,6 +10,6 @@ git checkout --orphan "$zweig"
 git rm -rfq . || true
 git clean -fdxq -e out -e cache || true
 cp "$tmp"/* .
-git add -A
+for f in "$@"; do git add -f -- "$(basename "$f")"; done
 git commit -qm "Ergebnis $(date -u +%Y-%m-%dT%H:%MZ) (Lauf ${GITHUB_RUN_ID:-lokal})"
 git push -fq origin "HEAD:$zweig"
