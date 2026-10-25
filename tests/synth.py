@@ -64,7 +64,7 @@ def grib(werte: np.ndarray) -> bytes:
         eccodes.codes_release(h)
 
 
-def schreibe(wurzel: str, lauf: str = "2026102412", schritte_3d=range(0, 49, 3), schritte_2d=range(0, 49), ebenen=None):
+def schreibe(wurzel: str, lauf: str = "2026102412", schritte_3d=range(0, 49), schritte_2d=range(0, 49), ebenen=None):
     hh = lauf[8:]
     H = hhl()
     ebenen = ebenen or list(range(20, 66))

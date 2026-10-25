@@ -15,7 +15,7 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
 
 - **Wind:**
   - u, v und t der ICON-D2-Modellflächen werden auf feste Höhen umgerechnet: 1000–8000 ft in 1000-ft-Schritten, dazu 10 000, 12 000 und 14 000 ft MSL.
-  - Danach mittelt der Job sie auf ein 0,1°-Gitter, 0 bis 48 Stunden, alle 3 Stunden.
+  - Danach mittelt der Job sie auf ein 0,1°-Gitter, 0 bis 48 Stunden, jede Stunde (der Lauf selbst kommt alle 3 Stunden).
   - An jedem Flugplatz im Gebiet (OurAirports) kommen stündliche Bodenwerte dazu. Die Temperatur wird auf die Platzhöhe umgerechnet.
   - Vor dem Veröffentlichen prüft der Job die Werte und vergleicht einige Plätze mit Open-Meteo (Modell icon_d2).
 - **Gelände:**
@@ -45,6 +45,7 @@ Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von
 ## Lizenzen der Daten
 
 - **Wind:** Quelle Deutscher Wetterdienst. Die Daten sind verändert: auf feste Höhen und ein 0,1°-Gitter umgerechnet.
-- **Gelände:** Copernicus DEM GLO-30. © DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA. Die Daten sind verändert: Höchstwert je Zelle, angehoben auf Gipfelhöhen aus GeoNames (CC BY 4.0).
+- **Gelände:** Copernicus DEM GLO-30, verändert (Höchstwert je 30″-Zelle, angehoben auf Gipfelhöhen aus GeoNames, CC BY 4.0). Vorgeschriebener Hinweis:
+  „produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30.“
 - **Orte:** GeoNames, CC BY 4.0.
 - **Flugplätze:** OurAirports, gemeinfrei.

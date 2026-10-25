@@ -31,7 +31,7 @@ from . import netz
 QUELLE = "https://opendata.dwd.de/weather/nwp/icon-d2/grib"
 PLAETZE_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
 HOEHEN_FT = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 10000, 12000, 14000]
-SCHRITTE_H = list(range(0, 49, 3))
+SCHRITTE_H = list(range(0, 49))          # stündlich 0–48 h (Georgi 25.10.2026; vorher alle 3 h)
 BODEN_SCHRITTE_H = list(range(0, 49))
 BODEN_VARS = ["t_2m", "td_2m", "pmsl", "u_10m", "v_10m", "vmax_10m"]
 GITTER_D = 0.1                 # Ausgabegitter in Grad

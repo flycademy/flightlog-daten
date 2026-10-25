@@ -77,7 +77,9 @@ def test_wind_ende_zu_ende():
                                 np.rint(synth.t_f(z) - 273.15))
                         if anteil == 1.0:
                             geprueft += 1
-                            if (u, v, t) != tuple(int(x) for x in soll):
+                            # gerundet auf ganze kt/°C: höchstens 0,5 daneben, dazu 0,05 für die GRIB-Packung der Testdaten
+                            exakt = (synth.u_f(z, st) * KT, synth.v_f(z, st) * KT, synth.t_f(z) - 273.15)
+                            if any(abs(x - e) > 0.55 for x, e in zip((u, v, t), exakt)):
                                 fehler.append(("Wert", i, j, st, hft, (u, v, t), soll))
         assert geprueft > 1000, geprueft
         assert not fehler, fehler[:10]

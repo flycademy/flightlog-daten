@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fcy_daten import format as F  # noqa: E402
 
 HOEHEN = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 10000, 12000, 14000]
-SCHRITTE = list(range(0, 49, 3))
+SCHRITTE = list(range(0, 49))
 BODEN = list(range(0, 49))
 G = {"lat0": 50.0, "lon0": 8.0, "d": 0.1, "nlat": 41, "nlon": 51}
 

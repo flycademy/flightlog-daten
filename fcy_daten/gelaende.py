@@ -161,8 +161,10 @@ def main(argv=None):
         gipfel_info = {"quelle": "GeoNames (CC BY 4.0)", "angehoben": len(erg["angehoben"]),
                        "uebersprungen": len(erg["uebersprungen"]), "grenze_m": GIPFEL_GRENZE_M}
     kopf = {"lat0": a.lat[0], "lat1": a.lat[1], "lon0": a.lon[0], "lon1": a.lon[1], "n": N,
-            "quelle": "Copernicus DEM GLO-30 (© DLR e.V. 2010–2014 und © Airbus Defence and Space GmbH 2014–2018, "
-                      "bereitgestellt unter COPERNICUS durch die Europäische Union und die ESA)",
+            "quelle": "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 "
+                      "provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of "
+                      "the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus "
+                      "WorldDEM-30. Verändert: Höchstwert je 30″-Zelle, Gipfel aus GeoNames (CC BY 4.0).",
             "erzeugt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if gipfel_info:
         kopf["gipfel"] = gipfel_info
