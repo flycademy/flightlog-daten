@@ -373,7 +373,8 @@ def main(argv=None):
             "schritte_h": SCHRITTE_H, "boden_schritte_h": BODEN_SCHRITTE_H, "gitter": gout,
             "modellflaechen": ebenen, "natives_gitter": g_nat}
     k = F.schreibe_wind(a.aus, kopf, U, V, T, plaetze)
-    print(f"geschrieben: {a.aus} · Gitter {gout['nlat']}×{gout['nlon']} · {len(plaetze)} Plätze", flush=True)
+    print(f"geschrieben: {a.aus} · {os.path.getsize(a.aus) / 1e6:.1f} MB · {len(SCHRITTE_H)} Zeitschritte · "
+          f"Gitter {gout['nlat']}×{gout['nlon']} · {len(plaetze)} Plätze", flush=True)
     return 0
 
 
