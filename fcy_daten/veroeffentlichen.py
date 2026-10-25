@@ -63,6 +63,8 @@ def main(argv=None) -> int:
                 "--latest=false", pruefen=False)
         if r.returncode != 0 and _gh("release", "view", TAG, "-R", repo, pruefen=False).returncode != 0:
             raise SystemExit(f"Release „{TAG}“ ließ sich nicht anlegen: {r.stderr.strip()}")
+    else:
+        _gh("release", "edit", TAG, "-R", repo, "--notes", NOTIZ, pruefen=False)   # Beschreibung (Quellenhinweise) aktuell halten
     _gh("release", "upload", TAG, pfad, "--clobber", "-R", repo)
     _gh("release", "upload", TAG, js, "--clobber", "-R", repo)
     print(f"veröffentlicht: {b['datei']} ({b['groesse']} Byte, Fassung {b['fassung']}) → "

@@ -40,7 +40,9 @@ def test_veroeffentlichen():
         z = [x.split(" ")[:3] for x in open(protokoll).read().splitlines()]
         assert z == [["release", "view", "daten"], ["release", "create", "daten"],
                      ["release", "upload", "daten"], ["release", "upload", "daten"],
-                     ["release", "view", "daten"], ["release", "upload", "daten"], ["release", "upload", "daten"]], z
+                     ["release", "view", "daten"], ["release", "edit", "daten"],
+                     ["release", "upload", "daten"], ["release", "upload", "daten"]], z
+        assert "WorldDEM-30" in open(protokoll).read().splitlines()[5]   # Beschreibung mit dem Copernicus-Hinweis aktualisiert
         zeilen = open(protokoll).read().splitlines()
         assert zeilen[2].split(" ")[3].endswith("orte.bin") and zeilen[3].split(" ")[3].endswith("orte.bin.json")   # Datei vor Beschreibung
         print("ok: Veröffentlichen")
