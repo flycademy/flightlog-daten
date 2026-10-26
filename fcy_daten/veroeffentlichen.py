@@ -21,14 +21,17 @@ import sys
 from . import format as F
 
 TAG = "daten"
-ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte"}
+ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte", b"FCYL": "luftraum"}
 NOTIZ = ("Automatisch erzeugte Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), abgeholt vom "
          "Datendienst des Flight Log. wind.bin: Höhenwind und Bodenwerte aus DWD ICON-D2 (Lauf alle 3 Stunden, Werte stündlich). "
          "gelaende.bin: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH "
          "2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved (Höchstwert je 30″-Zelle, "
          "ergänzt um Gipfelhöhen aus GeoNames); the organisations in charge of the Copernicus programme by law or by "
          "delegation do not incur any liability for any use of the Copernicus WorldDEM-30. "
-         "orte.bin: Ortsnamen aus GeoNames. Quellen und Lizenzen: README des Repositorys.")
+         "orte.bin: Ortsnamen aus GeoNames. "
+         "luftraum.bin: Lufträume, Flugplätze und VFR-Meldepunkte Deutschlands aus open flightmaps (openflightmaps.org, "
+         "OFMA General Users' License), laufender und nächster AIRAC-Zyklus; Fehler bitte an open flightmaps melden; "
+         "nicht zertifiziert, nie Primärquelle für die Navigation. Quellen und Lizenzen: README des Repositorys.")
 
 
 def beschreibung(pfad: str) -> dict:

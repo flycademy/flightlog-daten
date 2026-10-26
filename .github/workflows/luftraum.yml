@@ -1,0 +1,41 @@
+# Lufträume, Flugplätze und VFR-Meldepunkte Deutschlands aus open flightmaps — täglich (laufender und nächster AIRAC-Zyklus;
+# der nächste steht etwa eine Woche vor Beginn bereit) und von Hand
+name: Luftraum
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      veroeffentlichen:
+        description: "für den Flight Log veröffentlichen (Download im Release „daten“, den der Server abholt)"
+        type: boolean
+        default: true
+      ergebnis:
+        description: "Ergebnis zusätzlich im Zweig ergebnis-luftraum ablegen (zur Prüfung)"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  luftraum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Lufträume aufbereiten
+        run: bash werkzeug/lauf.sh python -m fcy_daten.luftraum --aus out/luftraum.bin
+      - name: Prüfen
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen luftraum out/luftraum.bin
+      - name: Veröffentlichen
+        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/luftraum.bin
+      - name: Ergebnis ablegen
+        if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
+        run: bash werkzeug/ergebnis.sh ergebnis-luftraum out/luftraum.bin

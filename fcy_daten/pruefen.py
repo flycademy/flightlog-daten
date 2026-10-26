@@ -4,6 +4,7 @@ auf dem Server bleibt die vorige Datei, der Flight Log zeigt deren Laufzeit an.
   python -m fcy_daten.pruefen wind out/wind.bin [--vergleich]
   python -m fcy_daten.pruefen gelaende out/gelaende.bin
   python -m fcy_daten.pruefen orte out/orte.bin
+  python -m fcy_daten.pruefen luftraum out/luftraum.bin [--jetzt 2026-10-26T12:00:00Z]
 
 --vergleich: Bodenwerte und 850-hPa-Wind an einigen Plätzen gegen Open-Meteo (Modell icon_d2) — fängt grobe Fehler
 der Aufbereitung ab (vertauschte Achsen, falsche Einheiten, falsche Zeit). Ist Open-Meteo nicht erreichbar, nur Hinweis.
@@ -199,14 +200,86 @@ def pruefe_orte(pfad: str) -> bool:
     return ok
 
 
+def im_umriss(lon: float, lat: float, pts: list[tuple[float, float]]) -> bool:
+    """Punkt im Polygon (Strahlverfahren)."""
+    drin = False
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+        if (y0 > lat) != (y1 > lat) and lon < x0 + (lat - y0) * (x1 - x0) / (y1 - y0):
+            drin = not drin
+    return drin
+
+
+# Stichproben: Flugplatz (ICAO), Kontrollzone mit diesem Platz darin. Die Grenzen selbst ändern sich mit dem AIRAC-Zyklus
+# und werden deshalb nicht fest geprüft, nur ob sie lesbar und plausibel sind.
+LR_PROBEN = [("EDVE", "BRAUNSCHWEIG"), ("EDDH", "HAMBURG"), ("EDDM", "MÜNCHEN"), ("EDDF", "FRANKFURT")]
+# Mindestanzahlen (2611: 1032 Lufträume, 837 Flugplätze, 376 Meldepunkte; CTR 62, TMA 154, R 186, RMZ 30, TMZ 55)
+LR_MIN = {"lr": 700, "ad": 500, "dp": 250, "arten": {"CTR": 40, "TMA": 50, "R": 50, "RMZ": 10, "TMZ": 10}}
+
+
+def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
+    import gzip as _gz
+    import hashlib
+    d = open(pfad, "rb").read()
+    K = F.kopf_lesen(d, b"FCYL")
+    Z = K.get("zyklen") or []
+    ok = melde(len(Z) >= 1, f"{len(Z)} AIRAC-Zyklen: " + ", ".join(f"{z['zyklus']} ({z['ab'][:10]} – {z['bis'][:10]}, Stand {z['stand']})" for z in Z))
+    t = (jetzt or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    ok &= melde(any(z["ab"] <= t < z["bis"] for z in Z), f"Zyklus für {t[:10]} enthalten")
+    ok &= melde("open flightmaps" in K.get("quelle", ""), "Quellenangabe open flightmaps im Kopf")
+    for z in Z:
+        roh = d[z["ab_byte"]:z["ab_byte"] + z["bytes"]]
+        if not melde(hashlib.sha256(roh).hexdigest() == z["sha256"], f"{z['zyklus']}: Prüfsumme des Inhalts ({z['bytes'] // 1024} kB gzip)"):
+            ok = False
+            continue
+        I = json.loads(_gz.decompress(roh).decode("utf-8"))
+        ok &= melde(I["zyklus"] == z["zyklus"] and I["ab"] == z["ab"] and I["bis"] == z["bis"], f"{z['zyklus']}: Kopf und Inhalt stimmen überein")
+        lr, ad, dp, de = I["lr"], I["ad"], I["dp"], I["de"]
+        ok &= melde(len(lr) >= LR_MIN["lr"], f"{z['zyklus']}: {len(lr)} Lufträume")
+        ok &= melde(len(ad) >= LR_MIN["ad"], f"{z['zyklus']}: {len(ad)} Flugplätze")
+        ok &= melde(len(dp) >= LR_MIN["dp"], f"{z['zyklus']}: {len(dp)} VFR-Meldepunkte")
+        ok &= melde(len(de) >= 1, f"{z['zyklus']}: {len(de)} FIR-Umrisse (Bereich, in dem diese Daten gelten)")
+        arten = {}
+        for e in lr:
+            arten[e["t"]] = arten.get(e["t"], 0) + 1
+        ok &= melde(all(arten.get(a, 0) >= n for a, n in LR_MIN["arten"].items()),
+                    f"{z['zyklus']}: Arten " + ", ".join(f"{a} {n}" for a, n in sorted(arten.items())))
+        schlecht = []
+        for e in lr:
+            p = F.umriss_aus(e["p"])
+            b = e["b"]
+            if len(p) < 3 or not (200000 <= b[0] <= b[2] <= 1700000 and 4500000 <= b[1] <= b[3] <= 5700000):
+                schlecht.append(e["n"]); continue
+            for g in (e["u"], e["o"]):
+                if not (isinstance(g, list) and len(g) == 3 and g[0] in ("ALT", "HEI", "STD") and g[2] in ("FT", "FL", "M")
+                        and isinstance(g[1], (int, float)) and 0 <= g[1] <= 99999):
+                    schlecht.append(e["n"]); break
+        ok &= melde(not schlecht, f"{z['zyklus']}: Umrisse und Grenzen lesbar und in Mitteleuropa" + (f" — fehlerhaft: {schlecht[:8]}" if schlecht else ""))
+        ok &= melde(all(len(x) == 6 and 45 <= x[3] <= 57 and 2 <= x[4] <= 17 for x in ad) and all(len(x) == 6 and 45 <= x[3] <= 57 and 2 <= x[4] <= 17 for x in dp),
+                    f"{z['zyklus']}: Flugplätze und Meldepunkte mit Koordinaten in Mitteleuropa")
+        D = [F.umriss_aus(p) for p in de]
+        for icao, ctr in LR_PROBEN:
+            a = next((x for x in ad if x[0] == icao), None)
+            if a is None:
+                ok &= melde(False, f"{z['zyklus']}: Flugplatz {icao} fehlt"); continue
+            lat, lon = a[3], a[4]
+            c = [e for e in lr if e["t"] == "CTR" and e["n"].upper().startswith(ctr) and im_umriss(lon, lat, F.umriss_aus(e["p"]))]
+            ok &= melde(bool(c), f"{z['zyklus']}: {icao} ({lat:.3f} N, {lon:.3f} E) liegt in der CTR " + (", ".join(f"{e['n']} {e['u'][1]}–{e['o'][1]} {e['o'][2]} {e['o'][0]}" for e in c) or ctr + " — nicht gefunden"))
+            ok &= melde(any(im_umriss(lon, lat, u) for u in D), f"{z['zyklus']}: {icao} liegt im deutschen FIR-Umriss")
+            ok &= melde(any(x[5] == icao for x in dp) or icao in ("EDDF",), f"{z['zyklus']}: Meldepunkte zu {icao}: " + ", ".join(x[0] for x in dp if x[5] == icao)[:120], wichtig=False)
+        aussen = [(n, la, lo) for n, la, lo in (("Zürich", 47.46, 8.55), ("Wien", 48.11, 16.57), ("Amsterdam", 52.31, 4.76), ("Prag", 50.10, 14.26))]
+        ok &= melde(not any(im_umriss(lo, la, u) for _, la, lo in aussen for u in D), f"{z['zyklus']}: Zürich, Wien, Amsterdam, Prag liegen außerhalb des FIR-Umrisses")
+    return ok
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("art", choices=["wind", "gelaende", "orte"])
+    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum"])
     ap.add_argument("datei")
     ap.add_argument("--vergleich", action="store_true")
+    ap.add_argument("--jetzt", help="Zeitpunkt (ISO, UTC) statt der aktuellen Zeit — für Tests")
     a = ap.parse_args(argv)
     ok = {"wind": lambda: pruefe_wind(a.datei, a.vergleich), "gelaende": lambda: pruefe_gelaende(a.datei),
-          "orte": lambda: pruefe_orte(a.datei)}[a.art]()
+          "orte": lambda: pruefe_orte(a.datei), "luftraum": lambda: pruefe_luftraum(a.datei, a.jetzt)}[a.art]()
     zusammenfassung(f"Prüfung {a.art}")
     return 0 if ok else 1
 

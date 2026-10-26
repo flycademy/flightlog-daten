@@ -272,3 +272,59 @@ def schreibe_orte(pfad: str, kopf: dict, zeilen: list[tuple]) -> dict:
         kopf.update({"anzahl": len(pos), "index_ab": index_ab})
         _kopf_schreiben(f, b"FCYO", kopf)
     return kopf
+
+
+# ----------------------------------------------------------------------------------------------
+# Luftraum (FCYL): Lufträume, Flugplätze und Meldepunkte aus open flightmaps, je AIRAC-Zyklus ein Inhalt.
+# Kopf: zyklen = [{zyklus, ab, bis, stand, ab_byte, bytes, sha256, lr, ad, dp}], index_ab = Beginn des ersten Inhalts.
+# Inhalt je Zyklus: gzip(JSON) mit
+#   zyklus, ab, bis, stand (OFMX „effective“), quelle
+#   lr: Lufträume [{t: Art (CTR, TMA, R, …; CLASS = Klassengrenze, auch Luftraum E ab 1000/1700 ft GND), k: Klasse, n: Name, a: Zweitname, u/o: [Bezug ALT|HEI|STD, Wert, FT|FL|M], z: H24|TIMSH|…,
+#        zt: Zeitplan (Text), zr: Bemerkung zum Zeitplan, s: 1 = Aktivierung per NOTAM/AUP, r: Bemerkung,
+#        b: [lon_min, lat_min, lon_max, lat_max] in 1e-5 Grad, p: Umriss als Ganzzahlen 1e-5 Grad, erstes Paar absolut
+#        (lon, lat), danach Differenzen}]
+#   ad: Flugplätze [[Kennung, Name, Art AD|GLD|UL, lat, lon, Höhe ft]]
+#   dp: Meldepunkte [[Kennung, Name, Art VFR-MRP|VFR-RP|VFR-ENR, lat, lon, Platz]]
+#   de: Umriss der deutschen FIR (vereinfacht) wie p — darin ersetzen diese Daten das openAIP-Kartenbild
+# Der Inhalt wird vom Datendienst unverändert (gzip) an die App gegeben.
+# ----------------------------------------------------------------------------------------------
+def schreibe_luftraum(pfad: str, kopf: dict, inhalte: list[dict]) -> dict:
+    """inhalte: je Zyklus das JSON-Objekt (siehe oben), sortiert nach Zyklus."""
+    import hashlib
+    kopf = dict(kopf)
+    kopf.update({"format": "FCYL", "version": 1, "index_ab": KOPF_BYTES})
+    zyklen = []
+    with open(pfad, "w+b") as f:
+        f.write(b"\0" * KOPF_BYTES)
+        for i in sorted(inhalte, key=lambda x: x["zyklus"]):
+            js = json.dumps(i, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            z = gz(js)
+            zyklen.append({"zyklus": i["zyklus"], "ab": i["ab"], "bis": i["bis"], "stand": i.get("stand", ""),
+                           "ab_byte": f.tell(), "bytes": len(z), "sha256": hashlib.sha256(z).hexdigest(),
+                           "lr": len(i["lr"]), "ad": len(i["ad"]), "dp": len(i["dp"])})
+            f.write(z)
+        kopf["zyklen"] = zyklen
+        _kopf_schreiben(f, b"FCYL", kopf)
+    return kopf
+
+
+def lese_luftraum(daten: bytes, zyklus: str | None = None) -> dict:
+    """Inhalt eines Zyklus (ohne Angabe: der neueste)."""
+    K = kopf_lesen(daten, b"FCYL")
+    Z = K["zyklen"] if zyklus is None else [z for z in K["zyklen"] if z["zyklus"] == zyklus]
+    if not Z:
+        raise KeyError(zyklus)
+    z = Z[-1]
+    return json.loads(gzip.decompress(daten[z["ab_byte"]:z["ab_byte"] + z["bytes"]]).decode("utf-8"))
+
+
+def umriss_aus(p: list[int]) -> list[tuple[float, float]]:
+    """p (1e-5 Grad, Differenzen) → [(lon, lat), …]"""
+    out, x, y = [], 0, 0
+    for i in range(0, len(p), 2):
+        if i == 0:
+            x, y = p[0], p[1]
+        else:
+            x += p[i]; y += p[i + 1]
+        out.append((x / 1e5, y / 1e5))
+    return out
