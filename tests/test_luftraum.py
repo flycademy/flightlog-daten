@@ -77,7 +77,9 @@ def ofmx(variante: int):
     lr("m-ohne-umriss", "TMZ", "OHNE UMRISS", None, u=("ALT", 3500, "FT"), o=("STD", 65, "FL"))
     lr("m-sector", "SECTOR", "LANGEN FIS", rechteck(7, 49, 9, 51), u=("HEI", 0, "FT"), o=("STD", 100, "FL"))
     lr("m-draft", "DRAFT", "ENTWURF", kreis(8, 50, 2), u=("HEI", 0, "FT"), o=("ALT", 3000, "FT"))
-    lr("m-fir", "FIR", "BREMEN", rechteck(6.0, 47.6, 14.0, 55.0, 0.05), u=("HEI", 0, "FT"), o=("STD", 245, "FL"))
+    # zwei FIR mit gemeinsamer Grenze bei 10° E, die leicht (rund 35 m) auseinanderliegt — wie unabhängig vereinfachte Grenzen
+    lr("m-fir", "FIR", "BREMEN", rechteck(6.0, 47.6, 10.0, 55.0, 0.05), u=("HEI", 0, "FT"), o=("STD", 245, "FL"))
+    lr("m-fir2", "FIR", "LANGEN", rechteck(10.0005, 47.6, 14.0, 55.0, 0.05), u=("HEI", 0, "FT"), o=("STD", 245, "FL"))
     adg = ('<Adg><AdgUid mid="g1"><AseUid mid="m-cls-c" region="ED"><codeType>CLASS</codeType><codeId>X_C</codeId></AseUid></AdgUid>'
            '<AseUidSameExtent mid="m-tma-area" region="ED"><codeType>TMA</codeType><codeId>X</codeId></AseUidSameExtent></Adg>\r\n'
            '<Adg><AdgUid mid="g2"><AseUid mid="m-cls-e" region="ED"><codeType>CLASS</codeType><codeId>X_E</codeId></AseUid></AdgUid>'
@@ -157,7 +159,9 @@ def test_umwandlung_und_datei():
             assert n["RMZ:TESTRMZ"]["z"] == "H24" and "zt" not in n["RMZ:TESTRMZ"]
             assert I["ad"] == [["EDVE", "BRAUNSCHWEIG", "AD", 52.31936, 10.55889, 296], ["NI123", "UL-WIESE", "UL", 52.4, 10.7, 328]], I["ad"]
             assert I["dp"] == [["N1", "NOVEMBER1", "VFR-MRP", 52.4, 10.5, "EDVE"], ["S", "SIERRA", "VFR-RP", 52.2, 10.55, "EDVE"]], I["dp"]
-            assert len(I["de"]) == 1 and P.im_umriss(*EDVE, F.umriss_aus(I["de"][0])) and len(I["de"][0]) // 2 < 40   # vereinfacht
+            M = F.umriss_aus(I["de"][0])
+            assert len(I["de"]) == 1 and P.im_umriss(*EDVE, M) and len(I["de"][0]) // 2 < 40, (len(I["de"]), len(I["de"][0]))   # vereinigt, vereinfacht
+            assert P.im_umriss(10.0003, 50.0, M) and P.im_umriss(6.01, 50.0, M) and P.im_umriss(13.99, 54.99, M) and not P.im_umriss(14.01, 50.0, M), M[:6]   # ohne Lücke an der inneren Grenze
             assert I["zyklus"] == "2610" and I["ab"] == "2026-10-01T00:00:00Z" and I["bis"] == "2026-10-29T00:00:00Z" and I["quelle"] == "open flightmaps"
             # gleiche Eingabe → gleiche Datei
             aus2 = os.path.join(tmp, "luftraum2.bin")

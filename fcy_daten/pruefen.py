@@ -237,7 +237,7 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
         ok &= melde(len(lr) >= LR_MIN["lr"], f"{z['zyklus']}: {len(lr)} Lufträume")
         ok &= melde(len(ad) >= LR_MIN["ad"], f"{z['zyklus']}: {len(ad)} Flugplätze")
         ok &= melde(len(dp) >= LR_MIN["dp"], f"{z['zyklus']}: {len(dp)} VFR-Meldepunkte")
-        ok &= melde(len(de) >= 1, f"{z['zyklus']}: {len(de)} FIR-Umrisse (Bereich, in dem diese Daten gelten)")
+        ok &= melde(len(de) >= 1, f"{z['zyklus']}: Umriss Deutschlands (vereinigte FIR) in {len(de)} Teil(en), {sum(len(x) // 2 for x in de)} Punkte")
         arten = {}
         for e in lr:
             arten[e["t"]] = arten.get(e["t"], 0) + 1
@@ -264,10 +264,10 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
             lat, lon = a[3], a[4]
             c = [e for e in lr if e["t"] == "CTR" and e["n"].upper().startswith(ctr) and im_umriss(lon, lat, F.umriss_aus(e["p"]))]
             ok &= melde(bool(c), f"{z['zyklus']}: {icao} ({lat:.3f} N, {lon:.3f} E) liegt in der CTR " + (", ".join(f"{e['n']} {e['u'][1]}–{e['o'][1]} {e['o'][2]} {e['o'][0]}" for e in c) or ctr + " — nicht gefunden"))
-            ok &= melde(any(im_umriss(lon, lat, u) for u in D), f"{z['zyklus']}: {icao} liegt im deutschen FIR-Umriss")
+            ok &= melde(any(im_umriss(lon, lat, u) for u in D), f"{z['zyklus']}: {icao} liegt im Umriss Deutschlands")
             ok &= melde(any(x[5] == icao for x in dp) or icao in ("EDDF",), f"{z['zyklus']}: Meldepunkte zu {icao}: " + ", ".join(x[0] for x in dp if x[5] == icao)[:120], wichtig=False)
         aussen = [(n, la, lo) for n, la, lo in (("Zürich", 47.46, 8.55), ("Wien", 48.11, 16.57), ("Amsterdam", 52.31, 4.76), ("Prag", 50.10, 14.26))]
-        ok &= melde(not any(im_umriss(lo, la, u) for _, la, lo in aussen for u in D), f"{z['zyklus']}: Zürich, Wien, Amsterdam, Prag liegen außerhalb des FIR-Umrisses")
+        ok &= melde(not any(im_umriss(lo, la, u) for _, la, lo in aussen for u in D), f"{z['zyklus']}: Zürich, Wien, Amsterdam, Prag liegen außerhalb des Umrisses")
     return ok
 
 

@@ -12,7 +12,8 @@ Ablauf:
                                      Grenzverläufe auf einen Korridor von 0,03 NM vereinfacht)
      Lufträume mit gleicher Ausdehnung wie ein anderer (Adg/AseUidSameExtent) bekommen dessen Umriss. Ohne Unter- und
      Obergrenze (Sammel-Einträge „AREA“) und die Arten FIR, UIR, SECTOR, DRAFT kommen nicht in die Liste; die FIR bilden
-     den Umriss Deutschlands (de), in dem die App diese Daten statt des openAIP-Kartenbilds zeigt.
+     zusammengefasst den Umriss Deutschlands (de), in dem die App diese Daten statt des openAIP-Kartenbilds zeigt — ohne
+     innere Grenzen, damit an den FIR-Grenzen kein Streifen des openAIP-Kartenbilds durchscheint.
   3. Umrisse mit Douglas-Peucker auf 0,0002° (rund 20 m) vereinfachen, auf 1e-5 Grad runden, Differenzen speichern.
   4. Datei FCYL schreiben (fcy_daten/format.py). „erzeugt“ ist der neueste OFMX-Stand — gleiche Eingabe, gleiche Datei,
      damit der Datendienst nur bei neuen Daten neu lädt.
@@ -41,7 +42,8 @@ AIRAC_T = dt.timedelta(days=28)
 OHNE = {"FIR", "UIR", "SECTOR", "DRAFT"}
 AD_ARTEN = {"AD", "GLD", "UL"}
 TOL_LR = 0.0002
-TOL_DE = 0.003
+TOL_DE = 0.002
+SCHLIESSEN = 0.002       # Lücken zwischen den FIR-Umrissen bis rund 200 m schließen (Grad)
 LIZENZ = ("open flightmaps association, OFMA General Users' License (openflightmaps.org/about): Nutzung auch kommerziell, "
           "Quelle nennen, Fehler an open flightmaps melden; nicht zertifiziert, nie Primärquelle für die Navigation")
 
@@ -122,6 +124,22 @@ def vereinfache(pts: list[tuple[float, float]], tol: float) -> list[tuple[float,
     b = _rdp(pts[m:] + [pts[0]], tol)
     out = a[:-1] + b[:-1]
     return out if len(out) >= 3 else pts
+
+
+def maske(firs: list[list[tuple[float, float]]]) -> list[list[int]]:
+    """FIR-Umrisse → Umriss Deutschlands: vereinigt, kleine Lücken geschlossen, nur Außenringe, vereinfacht, kodiert wie p."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    P = [Polygon(p).buffer(0) for p in firs if len(p) >= 4]
+    if not P:
+        return []
+    u = unary_union(P).buffer(SCHLIESSEN, join_style=2).buffer(-SCHLIESSEN, join_style=2).simplify(TOL_DE, preserve_topology=True)
+    teile = [u] if u.geom_type == "Polygon" else [g for g in getattr(u, "geoms", []) if g.geom_type == "Polygon"]
+    out = []
+    for g in sorted(teile, key=lambda g: -g.area):
+        if g.area >= 1e-3:                                   # Splitter unter etwa 3 km² weglassen
+            out.append(kodiere([(round(x, 6), round(y, 6)) for x, y in g.exterior.coords])[0])
+    return out
 
 
 def kodiere(pts: list[tuple[float, float]]) -> tuple[list[int], list[int]]:
@@ -228,7 +246,7 @@ def wandle(ofmx: bytes, shape: bytes) -> dict:
         a, b = adg.find("AdgUid/AseUid"), adg.find("AseUidSameExtent")
         if a is not None and b is not None:
             gleich[a.get("mid")] = b.get("mid")
-    lr, de = [], []
+    lr, firs = [], []
     fehlt = 0
     for ase in root.findall("Ase"):
         uid = ase.find("AseUid")
@@ -236,7 +254,7 @@ def wandle(ofmx: bytes, shape: bytes) -> dict:
         pts = S.get(mid) or S.get(gleich.get(mid, ""))
         if art == "FIR":
             if pts:
-                de.append(kodiere(vereinfache(pts, TOL_DE))[0])
+                firs.append(pts)
             continue
         if art in OHNE:
             continue
@@ -286,7 +304,7 @@ def wandle(ofmx: bytes, shape: bytes) -> dict:
     lr.sort(key=lambda e: (e["t"], e["n"], e["b"]))
     ad.sort(key=lambda x: (x[0] or "", x[1]))
     dp.sort(key=lambda x: (x[5], x[0], x[3], x[4]))
-    return {"lr": lr, "ad": ad, "dp": dp, "de": de, "stand": stand, "ohne_umriss": fehlt}
+    return {"lr": lr, "ad": ad, "dp": dp, "de": maske(firs), "firs": len(firs), "stand": stand, "ohne_umriss": fehlt}
 
 
 def aus_zip(daten: bytes, region: str = "ed") -> tuple[bytes, bytes]:
@@ -309,7 +327,8 @@ def zyklus_inhalt(kennung: str, region: str = "ed", quelle: str = QUELLE) -> dic
     ofmx, shape = aus_zip(netz.hole(u["ofmx"], timeout=180), region)
     w = wandle(ofmx, shape)
     print(f"  Zyklus {kennung} ({u['ab'][:10]} – {u['bis'][:10]}), OFMX vom {u['stand']}: {len(w['lr'])} Lufträume, "
-          f"{len(w['ad'])} Flugplätze, {len(w['dp'])} Meldepunkte, {len(w['de'])} FIR-Umrisse"
+          f"{len(w['ad'])} Flugplätze, {len(w['dp'])} Meldepunkte, Umriss aus {w['firs']} FIR ({len(w['de'])} Teil(e), "
+          f"{sum(len(x) // 2 for x in w['de'])} Punkte)"
           + (f", {w['ohne_umriss']} Lufträume ohne Umriss ausgelassen" if w["ohne_umriss"] else ""), flush=True)
     return {"zyklus": kennung, "ab": u["ab"], "bis": u["bis"], "stand": u["stand"] or w["stand"], "quelle": "open flightmaps",
             "lr": w["lr"], "ad": w["ad"], "dp": w["dp"], "de": w["de"]}

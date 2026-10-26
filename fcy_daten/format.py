@@ -285,7 +285,8 @@ def schreibe_orte(pfad: str, kopf: dict, zeilen: list[tuple]) -> dict:
 #        (lon, lat), danach Differenzen}]
 #   ad: Flugplätze [[Kennung, Name, Art AD|GLD|UL, lat, lon, Höhe ft]]
 #   dp: Meldepunkte [[Kennung, Name, Art VFR-MRP|VFR-RP|VFR-ENR, lat, lon, Platz]]
-#   de: Umriss der deutschen FIR (vereinfacht) wie p — darin ersetzen diese Daten das openAIP-Kartenbild
+#   de: Umriss Deutschlands = vereinigte FIR (ohne innere Grenzen, vereinfacht) wie p — darin ersetzen diese Daten das
+#       openAIP-Kartenbild
 # Der Inhalt wird vom Datendienst unverändert (gzip) an die App gegeben.
 # ----------------------------------------------------------------------------------------------
 def schreibe_luftraum(pfad: str, kopf: dict, inhalte: list[dict]) -> dict:
