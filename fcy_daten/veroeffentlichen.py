@@ -21,7 +21,7 @@ import sys
 from . import format as F
 
 TAG = "daten"
-ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte", b"FCYL": "luftraum"}
+ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte", b"FCYL": "luftraum", b"FCYR": "pisten"}
 NOTIZ = ("Automatisch erzeugte Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), abgeholt vom "
          "Datendienst des Flight Log. wind.bin: Höhenwind und Bodenwerte aus DWD ICON-D2 (Lauf alle 3 Stunden, Werte stündlich). "
          "gelaende.bin: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH "
@@ -31,7 +31,9 @@ NOTIZ = ("Automatisch erzeugte Daten für den FlyCademy Flight Log (training.fly
          "orte.bin: Ortsnamen aus GeoNames. "
          "luftraum.bin: Lufträume, Flugplätze und VFR-Meldepunkte Deutschlands aus open flightmaps (openflightmaps.org, "
          "OFMA General Users' License), laufender und nächster AIRAC-Zyklus; Fehler bitte an open flightmaps melden; "
-         "nicht zertifiziert, nie Primärquelle für die Navigation. Quellen und Lizenzen: README des Repositorys.")
+         "nicht zertifiziert, nie Primärquelle für die Navigation. "
+         "pisten.bin: Pistenrichtungen und -längen aus OurAirports (ourairports.com, gemeinfrei); maßgeblich ist die AIP. "
+         "Quellen und Lizenzen: README des Repositorys.")
 
 
 def beschreibung(pfad: str) -> dict:

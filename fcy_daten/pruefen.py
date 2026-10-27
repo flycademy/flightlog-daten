@@ -5,6 +5,7 @@ auf dem Server bleibt die vorige Datei, der Flight Log zeigt deren Laufzeit an.
   python -m fcy_daten.pruefen gelaende out/gelaende.bin
   python -m fcy_daten.pruefen orte out/orte.bin
   python -m fcy_daten.pruefen luftraum out/luftraum.bin [--jetzt 2026-10-26T12:00:00Z]
+  python -m fcy_daten.pruefen pisten out/pisten.bin
 
 --vergleich: Bodenwerte und 850-hPa-Wind an einigen Plätzen gegen Open-Meteo (Modell icon_d2) — fängt grobe Fehler
 der Aufbereitung ab (vertauschte Achsen, falsche Einheiten, falsche Zeit). Ist Open-Meteo nicht erreichbar, nur Hinweis.
@@ -271,15 +272,53 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
     return ok
 
 
+# Pisten: Proben mit bekannten Bahnen (Richtung, Länge in m ±60 m wie in der AIP gerundet, Belag)
+PI_PROBEN = [("EDVE", "08", 80, 2300, "ASP"), ("EDVE", "26", 260, 2300, "ASP"), ("EDDH", "23", 230, 3250, "ASP"),
+             ("EDDF", "18", 180, 4000, "CON"), ("EDVM", "07", 70, 1220, "ASP"), ("LOWI", "26", 260, 2000, "ASP")]
+PI_MIN = {"plaetze": 25000, "richtungen": 50000, "ed": 300}
+
+
+def pruefe_pisten(pfad: str) -> bool:
+    import gzip as _gz
+    import hashlib
+    d = open(pfad, "rb").read()
+    K = F.kopf_lesen(d, b"FCYR")
+    ok = melde("OurAirports" in K.get("quelle", ""), f"Quelle {K.get('quelle')}, Stand {K.get('stand')}")
+    ok &= melde(K["plaetze"] >= PI_MIN["plaetze"] and K["richtungen"] >= PI_MIN["richtungen"],
+                f"{K['plaetze']} Plätze, {K['richtungen']} Richtungen in {len(K['gruppen'])} Gruppen")
+    alle = {}
+    for g, e in sorted(K["gruppen"].items()):
+        roh = d[e["ab_byte"]:e["ab_byte"] + e["bytes"]]
+        if hashlib.sha256(roh).hexdigest() != e["sha256"]:
+            ok &= melde(False, f"Gruppe {g}: Prüfsumme"); continue
+        I = json.loads(_gz.decompress(roh).decode("utf-8"))
+        if len(I) != e["plaetze"] or not all(k[:1] == g for k in I):
+            ok &= melde(False, f"Gruppe {g}: Inhalt passt nicht zum Kopf"); continue
+        alle.update(I)
+    ok &= melde(len(alle) == K["plaetze"], f"alle {len(K['gruppen'])} Gruppen lesbar, Prüfsummen stimmen")
+    schlecht = [k for k, v in alle.items() for r in v
+                if not (isinstance(r, list) and len(r) == 5 and isinstance(r[0], str) and isinstance(r[1], int) and 10 <= r[1] <= 360 and r[1] % 10 == 0
+                        and (r[2] is None or 1 <= r[2] <= 10000) and (r[3] is None or 0 <= r[3] <= (r[2] or 0)) and isinstance(r[4], str))]
+    ok &= melde(not schlecht, "jede Richtung mit Kennung, 10–360°, Länge bis 10 km (Wasserflächen), verfügbare Landestrecke ≤ Länge" + (f" — fehlerhaft: {schlecht[:8]}" if schlecht else ""))
+    ed = [k for k in alle if k.startswith("ED") and alle[k]]
+    ok &= melde(len(ed) >= PI_MIN["ed"], f"{len(ed)} Plätze in Deutschland (ED..) mit Pisten")
+    for ic, rid, rdir, rlen, rsurf in PI_PROBEN:
+        r = next((x for x in alle.get(ic, []) if x[0] == rid), None)
+        ok &= melde(bool(r) and r[1] == rdir and r[2] is not None and abs(r[2] - rlen) <= 60 and r[4].startswith(rsurf),
+                    f"{ic} {rid}: " + (f"{r[1]}°, {r[2]} m (verfügbar zur Landung {r[3]} m), {r[4]}" if r else "fehlt"))
+    return ok
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum"])
+    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum", "pisten"])
     ap.add_argument("datei")
     ap.add_argument("--vergleich", action="store_true")
     ap.add_argument("--jetzt", help="Zeitpunkt (ISO, UTC) statt der aktuellen Zeit — für Tests")
     a = ap.parse_args(argv)
     ok = {"wind": lambda: pruefe_wind(a.datei, a.vergleich), "gelaende": lambda: pruefe_gelaende(a.datei),
-          "orte": lambda: pruefe_orte(a.datei), "luftraum": lambda: pruefe_luftraum(a.datei, a.jetzt)}[a.art]()
+          "orte": lambda: pruefe_orte(a.datei), "luftraum": lambda: pruefe_luftraum(a.datei, a.jetzt),
+          "pisten": lambda: pruefe_pisten(a.datei)}[a.art]()
     zusammenfassung(f"Prüfung {a.art}")
     return 0 if ok else 1
 

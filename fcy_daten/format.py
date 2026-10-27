@@ -1,7 +1,7 @@
-"""Dateiformate der FlyCademy-Flight-Log-Daten (Wind, Gelände, Orte).
+"""Dateiformate der FlyCademy-Flight-Log-Daten (Wind, Gelände, Orte, Luftraum, Pisten).
 
-Alle drei Dateien haben denselben Aufbau:
-  Byte 0–3     Kennung (b"FCYW", b"FCYG", b"FCYO")
+Alle Dateien haben denselben Aufbau:
+  Byte 0–3     Kennung (b"FCYW", b"FCYG", b"FCYO", b"FCYL", b"FCYR")
   Byte 4–7     Länge des Kopfes in Byte (uint32, little endian)
   Byte 8–…     Kopf als JSON (UTF-8), mit Leerzeichen auf KOPF_BYTES aufgefüllt
   ab KOPF_BYTES  Index und Daten; alle Positionen im Kopf sind absolut ab Dateianfang.
@@ -329,3 +329,46 @@ def umriss_aus(p: list[int]) -> list[tuple[float, float]]:
             x += p[i]; y += p[i + 1]
         out.append((x / 1e5, y / 1e5))
     return out
+
+
+# ----------------------------------------------------------------------------------------------
+# Pisten (FCYR): Pistenrichtungen aus OurAirports (runways.csv, gemeinfrei), je Platzkennung.
+# Kopf: gruppen = {Anfangszeichen der Kennung: {ab_byte, bytes, sha256, plaetze}}, plaetze, richtungen, stand, quelle.
+# Inhalt je Gruppe: gzip(JSON) {Kennung: [[id, dir, len, lda, surf], …]}
+#   id   Kennung der Richtung („08“, „26L“), dir = Zahl × 10 (Grad, missweisend gerundet wie die Kennung)
+#   len  Länge in m (aus ft gerundet; null = unbekannt), lda = Länge abzüglich versetzter Schwelle in m (null = unbekannt)
+#   surf Belag wie in OurAirports, in Großbuchstaben („ASP“, „GRS“ …)
+# Der Datendienst liest nur die Gruppe der gefragten Kennung.
+# ----------------------------------------------------------------------------------------------
+def pisten_gruppe(kennung: str) -> str:
+    return kennung[:1].upper()
+
+
+def schreibe_pisten(pfad: str, kopf: dict, plaetze: dict) -> dict:
+    """plaetze: {Kennung: [[id, dir, len, lda, surf], …]}"""
+    import hashlib
+    kopf = dict(kopf)
+    kopf.update({"format": "FCYR", "version": 1, "index_ab": KOPF_BYTES, "spalten": ["id", "dir", "len", "lda", "surf"]})
+    gruppen_roh: dict[str, dict] = {}
+    for k in sorted(plaetze):
+        gruppen_roh.setdefault(pisten_gruppe(k), {})[k] = plaetze[k]
+    gruppen = {}
+    with open(pfad, "w+b") as f:
+        f.write(b"\0" * KOPF_BYTES)
+        for g in sorted(gruppen_roh):
+            js = json.dumps(gruppen_roh[g], ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            z = gz(js)
+            gruppen[g] = {"ab_byte": f.tell(), "bytes": len(z), "sha256": hashlib.sha256(z).hexdigest(), "plaetze": len(gruppen_roh[g])}
+            f.write(z)
+        kopf.update({"gruppen": gruppen, "plaetze": len(plaetze), "richtungen": sum(len(v) for v in plaetze.values())})
+        _kopf_schreiben(f, b"FCYR", kopf)
+    return kopf
+
+
+def lese_pisten(daten: bytes, kennung: str) -> list | None:
+    """Richtungen eines Platzes; None = Kennung nicht in der Datei."""
+    K = kopf_lesen(daten, b"FCYR")
+    g = K["gruppen"].get(pisten_gruppe(kennung))
+    if not g:
+        return None
+    return json.loads(gzip.decompress(daten[g["ab_byte"]:g["ab_byte"] + g["bytes"]]).decode("utf-8")).get(kennung.upper())

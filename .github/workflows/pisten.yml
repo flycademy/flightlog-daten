@@ -1,0 +1,43 @@
+# Pisten aus OurAirports (runways.csv, gemeinfrei) — wöchentlich und von Hand. Der Flight Log fragt sie über den eigenen
+# Datendienst ab; der Browser ruft OurAirports nicht mehr selbst ab.
+name: Pisten
+on:
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      veroeffentlichen:
+        description: "für den Flight Log veröffentlichen (Download im Release „daten“, den der Server abholt)"
+        type: boolean
+        default: true
+      ergebnis:
+        description: "Ergebnis zusätzlich im Zweig ergebnis-pisten ablegen (zur Prüfung)"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  pisten:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Pisten aufbereiten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pisten --aus out/pisten.bin
+      - name: Prüfen
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen pisten out/pisten.bin
+      - name: Veröffentlichen
+        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/pisten.bin
+      - name: Ergebnis ablegen
+        if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
+        run: bash werkzeug/ergebnis.sh ergebnis-pisten out/pisten.bin

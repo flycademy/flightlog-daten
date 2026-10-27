@@ -3,7 +3,7 @@
 Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), aufbereitet mit GitHub Actions und als Download im
 Release **„daten“** veröffentlicht. Der Datendienst des Flight Log (`private/flightlog/dienst.php`) holt sie sich von
 dort selbst in den nicht öffentlichen Datenordner; dafür braucht es kein FTP-Konto und keine Zugangsdaten. Der Flight
-Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoNames, open flightmaps oder GitHub.
+Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoNames, open flightmaps, OurAirports oder GitHub.
 
 | Job | Quelle | Wann | Datei auf dem Server |
 | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
 | Gelände | Copernicus DEM GLO-30 (AWS Open Data), Gipfel aus GeoNames | von Hand, einmal | `private/flightlog/daten/gelaende.bin` |
 | Orte | GeoNames (download.geonames.org) | monatlich | `private/flightlog/daten/orte.bin` |
 | Luftraum | open flightmaps, OFMX Deutschland (snapshots.openflightmaps.org) | täglich | `private/flightlog/daten/luftraum.bin` |
+| Pisten | OurAirports, `runways.csv` (davidmegginson.github.io/ourairports-data) | wöchentlich (montags) | `private/flightlog/daten/pisten.bin` |
 
 ## Was die Jobs rechnen
 
@@ -30,6 +31,11 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
   - Lufträume mit Art, Klasse, Name, Unter- und Obergrenze, Zeitplan und Bemerkung; den Umriss liefert die Shape-Extension von open flightmaps (Bögen aufgelöst). Umrisse vereinfacht auf rund 20 m. Ohne Höhen (Sammel-Einträge) und FIR, UIR, FIS-Sektoren und Entwürfe fehlen in der Liste; die FIR ergeben den Bereich, in dem die App diese Daten statt des openAIP-Kartenbilds zeigt.
   - Flugplätze (AD, Segelflug, UL; ohne Hubschrauberlandeplätze) und alle VFR-Meldepunkte.
   - Vor dem Veröffentlichen: Prüfsummen, Mindestanzahlen, Stichproben (EDVE in der CTR Braunschweig, EDDH, EDDM, EDDF), Bereich in Mitteleuropa.
+- **Pisten:**
+  - Je Platz mit vierstelliger Kennung und je offener Bahnrichtung mit Kennung 01–36: Kennung, Richtung (Zahl × 10), Länge und Länge abzüglich versetzter Schwelle in m, Belag.
+  - Gerechnet genau wie die App bis Build 25j im Browser aus derselben CSV (geprüft an über 3000 Plätzen: gleich).
+  - Je Anfangsbuchstabe der Kennung ein gepackter Teil, damit der Dienst je Abfrage nur einen kleinen Teil liest.
+  - Vor dem Veröffentlichen: Prüfsummen, Mindestanzahlen, Wertebereiche, Stichproben (EDVE 08/26, EDDH, EDDF, EDVM, LOWI).
 
 Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von `private/flightlog/dienst.php` im Paket des Flight Log.
 
@@ -38,15 +44,15 @@ Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von
 1. Jeder Job rechnet, prüft und lädt seine Datei mit einer Beschreibung (`….json`: Größe, SHA-256, Fassung) in das Release `daten` hoch. Dafür reicht das eingebaute `GITHUB_TOKEN`; es gibt keine Secrets.
 2. `dienst.php` holt sich die Dateien von `https://github.com/flycademy/flightlog-daten/releases/download/daten/…`:
    - fehlt eine Datei, sofort;
-   - sonst im Hintergrund nach der Antwort, Wind spätestens alle 10 Minuten, Luftraum alle 6 Stunden, Gelände und Orte täglich.
+   - sonst im Hintergrund nach der Antwort, Wind spätestens alle 10 Minuten, Luftraum alle 6 Stunden, Gelände, Orte und Pisten täglich.
 3. Der Dienst tauscht eine Datei nur aus, wenn Größe und Prüfsumme zur Beschreibung passen. Klappt ein Abruf nicht, bleibt die vorige Datei.
 
-**Einrichten:** nichts. Gelände und Orte einmal von Hand starten (Actions → **Gelände** bzw. **Orte** → „Run workflow“). Danach laufen Wind (alle 3 Stunden), Luftraum (täglich) und Orte (monatlich) von selbst.
+**Einrichten:** nichts. Gelände und Orte einmal von Hand starten (Actions → **Gelände** bzw. **Orte** → „Run workflow“). Danach laufen Wind (alle 3 Stunden), Luftraum (täglich), Pisten (wöchentlich) und Orte (monatlich) von selbst.
 
 ## Prüfen
 
 - **Ergebnisse ansehen:** Mit „Ergebnis ablegen“ landet die erzeugte Datei im Zweig `ergebnis-…`, zum Nachprüfen.
-- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_veroeffentlichen.py` und `python tests/test_luftraum.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
+- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_veroeffentlichen.py`, `python tests/test_luftraum.py` und `python tests/test_pisten.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
 
 ## Lizenzen der Daten
 
@@ -55,4 +61,4 @@ Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von
   „produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30.“
 - **Orte:** GeoNames, CC BY 4.0.
 - **Luftraum:** open flightmaps association, OFMA General Users' License ([openflightmaps.org/about](https://openflightmaps.org/about/)): Nutzung auch kommerziell; open flightmaps ist immer als Quelle zu nennen; Fehler sind an open flightmaps zu melden, und die App gibt ihren Nutzern dafür einen Weg (Link in der Statuszeile der Karte). Die Daten sind nicht zertifiziert und nie Primärquelle für die Navigation; maßgeblich bleiben ICAO-Karte, AIP und NOTAM. Verändert: umgewandelt, Umrisse vereinfacht.
-- **Flugplätze:** OurAirports, gemeinfrei.
+- **Flugplätze und Pisten:** OurAirports, gemeinfrei. Maßgeblich bleiben die Angaben der AIP.
