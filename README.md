@@ -3,7 +3,7 @@
 Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), aufbereitet mit GitHub Actions und als Download im
 Release **„daten“** veröffentlicht. Der Datendienst des Flight Log (`private/flightlog/dienst.php`) holt sie sich von
 dort selbst in den nicht öffentlichen Datenordner; dafür braucht es kein FTP-Konto und keine Zugangsdaten. Der Flight
-Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoNames, open flightmaps, OurAirports oder GitHub.
+Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoNames, open flightmaps, OurAirports, DFS oder GitHub.
 
 | Job | Quelle | Wann | Datei auf dem Server |
 | --- | --- | --- | --- |
@@ -12,6 +12,7 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
 | Orte | GeoNames (download.geonames.org) | monatlich | `private/flightlog/daten/orte.bin` |
 | Luftraum | open flightmaps, OFMX Deutschland (snapshots.openflightmaps.org) | täglich | `private/flightlog/daten/luftraum.bin` |
 | Pisten | OurAirports, `runways.csv` (davidmegginson.github.io/ourairports-data) | wöchentlich (montags) | `private/flightlog/daten/pisten.bin` |
+| Hindernisse | DFS, Datensatz „ED Obstacles Area 1“ (aip.dfs.de/datasets), laufender und nächster AIRAC-Zyklus | täglich | `private/flightlog/daten/hindernisse.bin` |
 
 ## Was die Jobs rechnen
 
@@ -36,6 +37,12 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
   - Gerechnet genau wie die App bis Build 25j im Browser aus derselben CSV (geprüft an über 3000 Plätzen: gleich).
   - Je Anfangsbuchstabe der Kennung ein gepackter Teil, damit der Dienst je Abfrage nur einen kleinen Teil liest.
   - Vor dem Veröffentlichen: Prüfsummen, Mindestanzahlen, Wertebereiche, Stichproben (EDVE 08/26, EDDH, EDDF, EDVM, LOWI).
+- **Hindernisse (ab Build 25s):**
+  - Die Übersicht der DFS (`scripts/getAmdtData.php?amdt=0` und `=1`) nennt den Datensatz des laufenden und des nächsten Zyklus. Der Job lädt beide und vereinigt sie: Ein Hindernis zählt, sobald es in einem der beiden steht, mit der größeren Höhe (auf der sicheren Seite).
+  - Je Hindernisteil Lage, Spitze in ft MSL (aufgerundet), Höhe über Grund, Art, Befeuerung; je 1°-Kachel gepackt.
+  - Abdeckung: Die DFS führt nur Hindernisse in Deutschland. Je 30″-Zelle (wie das Gelände) ein Bit „ganz in Deutschland“, aus dem Umriss in `luftraum.bin` (FIR, um 300 m nach innen gesetzt). Berührt ein MSA-Korridor eine Zelle ohne Bit, meldet der Flight Log den Abschnitt als „ohne Hindernisdaten“.
+  - Der Flight Log rechnet damit die MSA wie die Übungskarte der Theorie (Georgi 15.11.2026): MEF = höchste Erhebung im Korridor (Gelände + 300 ft oder Hindernis, je höher) + 100 ft, aufgerundet auf volle 100 ft.
+  - Vor dem Veröffentlichen: Prüfsumme, laufender Zyklus gilt, Mindestanzahlen, Wertebereiche, Abdeckung an Stichproben (EDVE, EDOV, EDDM, Nordsee innen; Prag, Straßburg, Salzburg, Amsterdam außen).
 
 Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von `private/flightlog/dienst.php` im Paket des Flight Log.
 
@@ -44,15 +51,15 @@ Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von
 1. Jeder Job rechnet, prüft und lädt seine Datei mit einer Beschreibung (`….json`: Größe, SHA-256, Fassung) in das Release `daten` hoch. Dafür reicht das eingebaute `GITHUB_TOKEN`; es gibt keine Secrets.
 2. `dienst.php` holt sich die Dateien von `https://github.com/flycademy/flightlog-daten/releases/download/daten/…`:
    - fehlt eine Datei, sofort;
-   - sonst im Hintergrund nach der Antwort, Wind spätestens alle 10 Minuten, Luftraum alle 6 Stunden, Gelände, Orte und Pisten täglich.
+   - sonst im Hintergrund nach der Antwort, Wind spätestens alle 10 Minuten, Luftraum alle 6 Stunden, Gelände, Orte, Pisten und Hindernisse täglich (Hindernisse nach einer Woche ohne Prüfung vor der Antwort).
 3. Der Dienst tauscht eine Datei nur aus, wenn Größe und Prüfsumme zur Beschreibung passen. Klappt ein Abruf nicht, bleibt die vorige Datei.
 
-**Einrichten:** nichts. Gelände und Orte einmal von Hand starten (Actions → **Gelände** bzw. **Orte** → „Run workflow“). Danach laufen Wind (alle 3 Stunden), Luftraum (täglich), Pisten (wöchentlich) und Orte (monatlich) von selbst.
+**Einrichten:** nichts. Gelände und Orte einmal von Hand starten (Actions → **Gelände** bzw. **Orte** → „Run workflow“), ebenso **Hindernisse** beim ersten Mal, damit die Datei vor dem ersten Lauf nach Plan da ist. Danach laufen Wind (alle 3 Stunden), Luftraum und Hindernisse (täglich), Pisten (wöchentlich) und Orte (monatlich) von selbst.
 
 ## Prüfen
 
 - **Ergebnisse ansehen:** Mit „Ergebnis ablegen“ landet die erzeugte Datei im Zweig `ergebnis-…`, zum Nachprüfen.
-- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_veroeffentlichen.py`, `python tests/test_luftraum.py` und `python tests/test_pisten.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
+- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_veroeffentlichen.py`, `python tests/test_luftraum.py`, `python tests/test_pisten.py` und `python tests/test_hindernisse.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
 
 ## Lizenzen der Daten
 
@@ -62,3 +69,4 @@ Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von
 - **Orte:** GeoNames, CC BY 4.0.
 - **Luftraum:** open flightmaps association, OFMA General Users' License ([openflightmaps.org/about](https://openflightmaps.org/about/)): Nutzung auch kommerziell; open flightmaps ist immer als Quelle zu nennen; Fehler sind an open flightmaps zu melden, und die App gibt ihren Nutzern dafür einen Weg (Link in der Statuszeile der Karte). Die Daten sind nicht zertifiziert und nie Primärquelle für die Navigation; maßgeblich bleiben ICAO-Karte, AIP und NOTAM. Verändert: umgewandelt, Umrisse vereinfacht.
 - **Flugplätze und Pisten:** OurAirports, gemeinfrei. Maßgeblich bleiben die Angaben der AIP.
+- **Hindernisse:** © DFS Deutsche Flugsicherung GmbH, Datensatz ED Obstacles Area 1, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Verändert: umgewandelt, laufender und nächster AIRAC-Zyklus vereinigt. Maßgeblich bleiben ICAO-Karte, AIP und NOTAM.

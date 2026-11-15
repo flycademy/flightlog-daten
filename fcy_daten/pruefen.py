@@ -6,6 +6,7 @@ auf dem Server bleibt die vorige Datei, der Flight Log zeigt deren Laufzeit an.
   python -m fcy_daten.pruefen orte out/orte.bin
   python -m fcy_daten.pruefen luftraum out/luftraum.bin [--jetzt 2026-10-26T12:00:00Z]
   python -m fcy_daten.pruefen pisten out/pisten.bin
+  python -m fcy_daten.pruefen hindernisse out/hindernisse.bin [--jetzt 2026-11-15T12:00:00Z]
 
 --vergleich: Bodenwerte und 850-hPa-Wind an einigen Plätzen gegen Open-Meteo (Modell icon_d2) — fängt grobe Fehler
 der Aufbereitung ab (vertauschte Achsen, falsche Einheiten, falsche Zeit). Ist Open-Meteo nicht erreichbar, nur Hinweis.
@@ -309,16 +310,76 @@ def pruefe_pisten(pfad: str) -> bool:
     return ok
 
 
+HI_MIN = {"anzahl": 20000, "kacheln": 60, "N52E010": 300}
+# Abdeckung: (Name, lat, lon, soll gedeckt)
+HI_PROBEN = [("EDVE", 52.319, 10.556, True), ("EDOV", 52.629, 11.819, True), ("EDDM", 48.354, 11.786, True),
+             ("Nordsee bei Helgoland", 54.5, 7.0, True), ("Prag", 50.08, 14.43, False), ("Straßburg", 48.58, 7.75, False),
+             ("Salzburg", 47.80, 13.04, False), ("Amsterdam", 52.37, 4.90, False)]
+
+
+def pruefe_hindernisse(pfad: str, jetzt: str | None = None) -> bool:
+    import gzip as _gz
+    import hashlib
+    d = open(pfad, "rb").read()
+    K = F.kopf_lesen(d, b"FCYH")
+    ok = melde("DFS" in K.get("quelle", "") and "CC BY 4.0" in K.get("lizenz", ""), f"Quelle {K.get('quelle')} · {K.get('lizenz')}")
+    Z = [z.get("airac") for z in K.get("zyklen") or []]
+    ok &= melde(1 <= len(Z) <= 2 and all(isinstance(z, str) and len(z) == 10 for z in Z) and Z == sorted(Z), f"Zyklen {Z}")
+    t = dt.datetime.fromisoformat((jetzt or dt.datetime.now(dt.timezone.utc).isoformat()).replace("Z", "+00:00"))
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    if Z:
+        ab = dt.datetime.fromisoformat(Z[0] + "T00:00:00+00:00")
+        ok &= melde(ab <= t < ab + dt.timedelta(days=28), f"laufender Zyklus {Z[0]} gilt jetzt ({t:%Y-%m-%d %H:%M} UTC)")
+    nl, no = K["lat1"] - K["lat0"], K["lon1"] - K["lon0"]
+    ok &= melde(K.get("n") == 120 and 0 < nl <= 12 and 0 < no <= 14 and K["index_ab"] + nl * no * 8 <= len(d),
+                f"Kachelraster {K['lat0']}–{K['lat1']}° N, {K['lon0']}–{K['lon1']}° E, Index in der Datei")
+    alle, kacheln, schlecht, h = 0, {}, [], hashlib.sha256()
+    for i in range(nl * no):
+        o, m = struct.unpack_from("<II", d, K["index_ab"] + i * 8)
+        if o == F.HINDERNIS_FEHLT:
+            continue
+        la, lo = K["lat0"] + i // no, K["lon0"] + i % no
+        try:
+            roh = d[o:o + m]; h.update(roh)
+            k = json.loads(_gz.decompress(roh).decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            schlecht.append(F.kachel_name(la, lo) + " unlesbar"); continue
+        kacheln[(la, lo)] = k
+        if k.get("z") != Z or k.get("a") not in ("voll", "teil", "keine") or not isinstance(k.get("h"), list):
+            schlecht.append(F.kachel_name(la, lo) + " Kopf"); continue
+        if k["a"] == "teil" and len(__import__("base64").b64decode(k.get("m", ""))) != 120 * 120 // 8:
+            schlecht.append(F.kachel_name(la, lo) + " Bitfeld")
+        for r in k["h"]:
+            if not (isinstance(r, list) and len(r) == 6 and la * 1e5 <= r[0] < (la + 1) * 1e5 and lo * 1e5 <= r[1] < (lo + 1) * 1e5
+                    and isinstance(r[2], int) and -100 <= r[2] <= 12000 and (r[3] is None or 0 <= r[3] <= 2500)
+                    and isinstance(r[4], str) and r[5] in (0, 1)):
+                schlecht.append(F.kachel_name(la, lo) + " " + str(r)[:60]); break
+        alle += len(k["h"])
+    ok &= melde(not schlecht, f"{len(kacheln)} Kacheln lesbar, Werte im Rahmen (Lage in der Kachel, −100…12 000 ft MSL, 0…2500 ft über Grund)"
+                + (f" — fehlerhaft: {schlecht[:6]}" if schlecht else ""))
+    ok &= melde(h.hexdigest() == K.get("inhalt_sha256") and alle == K.get("anzahl"), f"Prüfsumme des Inhalts, {alle} Hindernisteile wie im Kopf")
+    ok &= melde(alle >= HI_MIN["anzahl"] and len(kacheln) >= HI_MIN["kacheln"], f"mindestens {HI_MIN['anzahl']} Hindernisteile in {HI_MIN['kacheln']} Kacheln")
+    k = kacheln.get((52, 10))
+    ok &= melde(bool(k) and len(k["h"]) >= HI_MIN["N52E010"], f"Kachel N52E010 (Braunschweig): {len(k['h']) if k else 0} Hindernisteile")
+    hoch = max((r[2] for k in kacheln.values() for r in k["h"]), default=0)
+    ok &= melde(3000 <= hoch <= 12000, f"höchstes Hindernis {hoch} ft MSL")
+    for name, la, lo, soll in HI_PROBEN:
+        ist = F.hindernis_zelle_gedeckt(kacheln.get((math.floor(la), math.floor(lo))), la, lo)
+        ok &= melde(ist == soll, f"Abdeckung {name}: {'Hindernisdaten vollständig' if ist else 'ohne Hindernisdaten'}")
+    return ok
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum", "pisten"])
+    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum", "pisten", "hindernisse"])
     ap.add_argument("datei")
     ap.add_argument("--vergleich", action="store_true")
     ap.add_argument("--jetzt", help="Zeitpunkt (ISO, UTC) statt der aktuellen Zeit — für Tests")
     a = ap.parse_args(argv)
     ok = {"wind": lambda: pruefe_wind(a.datei, a.vergleich), "gelaende": lambda: pruefe_gelaende(a.datei),
           "orte": lambda: pruefe_orte(a.datei), "luftraum": lambda: pruefe_luftraum(a.datei, a.jetzt),
-          "pisten": lambda: pruefe_pisten(a.datei)}[a.art]()
+          "pisten": lambda: pruefe_pisten(a.datei), "hindernisse": lambda: pruefe_hindernisse(a.datei, a.jetzt)}[a.art]()
     zusammenfassung(f"Prüfung {a.art}")
     return 0 if ok else 1
 

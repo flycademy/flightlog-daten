@@ -21,7 +21,7 @@ import sys
 from . import format as F
 
 TAG = "daten"
-ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte", b"FCYL": "luftraum", b"FCYR": "pisten"}
+ARTEN = {b"FCYW": "wind", b"FCYG": "gelaende", b"FCYO": "orte", b"FCYL": "luftraum", b"FCYR": "pisten", b"FCYH": "hindernisse"}
 NOTIZ = ("Automatisch erzeugte Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), abgeholt vom "
          "Datendienst des Flight Log. wind.bin: Höhenwind und Bodenwerte aus DWD ICON-D2 (Lauf alle 3 Stunden, Werte stündlich). "
          "gelaende.bin: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH "
@@ -33,6 +33,8 @@ NOTIZ = ("Automatisch erzeugte Daten für den FlyCademy Flight Log (training.fly
          "OFMA General Users' License), laufender und nächster AIRAC-Zyklus; Fehler bitte an open flightmaps melden; "
          "nicht zertifiziert, nie Primärquelle für die Navigation. "
          "pisten.bin: Pistenrichtungen und -längen aus OurAirports (ourairports.com, gemeinfrei); maßgeblich ist die AIP. "
+         "hindernisse.bin: Luftfahrthindernisse Deutschlands aus DFS ED Obstacles Area 1 (aip.dfs.de/datasets), "
+         "© DFS Deutsche Flugsicherung GmbH, CC BY 4.0; verändert: umgewandelt, laufender und nächster AIRAC-Zyklus vereinigt. "
          "Quellen und Lizenzen: README des Repositorys.")
 
 

@@ -1,7 +1,7 @@
-"""Dateiformate der FlyCademy-Flight-Log-Daten (Wind, Gelände, Orte, Luftraum, Pisten).
+"""Dateiformate der FlyCademy-Flight-Log-Daten (Wind, Gelände, Orte, Luftraum, Pisten, Hindernisse).
 
 Alle Dateien haben denselben Aufbau:
-  Byte 0–3     Kennung (b"FCYW", b"FCYG", b"FCYO", b"FCYL", b"FCYR")
+  Byte 0–3     Kennung (b"FCYW", b"FCYG", b"FCYO", b"FCYL", b"FCYR", b"FCYH")
   Byte 4–7     Länge des Kopfes in Byte (uint32, little endian)
   Byte 8–…     Kopf als JSON (UTF-8), mit Leerzeichen auf KOPF_BYTES aufgefüllt
   ab KOPF_BYTES  Index und Daten; alle Positionen im Kopf sind absolut ab Dateianfang.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import math
 import struct
 import unicodedata
 
@@ -372,3 +373,67 @@ def lese_pisten(daten: bytes, kennung: str) -> list | None:
     if not g:
         return None
     return json.loads(gzip.decompress(daten[g["ab_byte"]:g["ab_byte"] + g["bytes"]]).decode("utf-8")).get(kennung.upper())
+
+
+# ----------------------------------------------------------------------------------------------
+# Hindernisse (FCYH, Build 25s): DFS „ED Obstacles Area 1“, je 1°-Kachel ein gzip(JSON), Index wie FCYG.
+# Kopf: lat0, lat1, lon0, lon1 (Kachelraster), n (Zellen je 1° der Abdeckung, wie gelaende.bin), zyklen, anzahl, kacheln.
+# Index: je Kachel (lat0…lat1-1) × (lon0…lon1-1) zwei uint32 (Position, Länge); Position 0xFFFFFFFF = keine Kachel
+# (außerhalb Deutschlands, keine Hindernisdaten).
+# Inhalt je Kachel: {"z": [AIRAC-Daten], "a": "voll" | "teil" | "keine",
+#                    "m": Bitfeld base64 (nur „teil“: n×n Bit, Zeile 0 = Nord, LSB zuerst; 1 = Zelle ganz in Deutschland),
+#                    "h": [[lat·1e5, lon·1e5, Spitze ft MSL (aufgerundet), Höhe über Grund ft | null, Art, befeuert 0/1], …]}
+#   „voll“ = ganze Kachel in Deutschland; „keine“ = nur Hindernisse, keine Zelle ganz in Deutschland.
+# ----------------------------------------------------------------------------------------------
+HINDERNIS_FEHLT = 0xFFFFFFFF
+
+
+def schreibe_hindernisse(pfad: str, kopf: dict, kacheln: dict) -> dict:
+    """kacheln: {(lat, lon): {"z", "a", "m"?, "h"}}"""
+    import hashlib
+    kopf = dict(kopf)
+    la_ = [k[0] for k in kacheln]; lo_ = [k[1] for k in kacheln]
+    lat0, lat1, lon0, lon1 = min(la_), max(la_) + 1, min(lo_), max(lo_) + 1
+    kopf.update({"format": "FCYH", "version": 1, "n": 120, "lat0": lat0, "lat1": lat1, "lon0": lon0, "lon1": lon1,
+                 "spalten": ["lat_e5", "lon_e5", "msl_ft", "agl_ft", "art", "befeuert"]})
+    with open(pfad, "w+b") as f:
+        f.write(b"\0" * KOPF_BYTES)
+        index_ab = f.tell()
+        f.write(b"\0" * ((lat1 - lat0) * (lon1 - lon0) * 8))
+        index, anzahl, h = [], 0, hashlib.sha256()
+        for la in range(lat0, lat1):
+            for lo in range(lon0, lon1):
+                k = kacheln.get((la, lo))
+                if k is None:
+                    index.append((HINDERNIS_FEHLT, 0)); continue
+                z = gz(json.dumps(k, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+                index.append((f.tell(), len(z))); f.write(z); h.update(z); anzahl += len(k["h"])
+        kopf.update({"index_ab": index_ab, "kacheln": len(kacheln), "anzahl": anzahl, "inhalt_sha256": h.hexdigest()})
+        f.seek(index_ab)
+        f.write(b"".join(struct.pack("<II", o, m) for o, m in index))
+        _kopf_schreiben(f, b"FCYH", kopf)
+    return kopf
+
+
+def lese_hindernis_kachel(daten: bytes, lat: int, lon: int) -> dict | None:
+    K = kopf_lesen(daten, b"FCYH")
+    if not (K["lat0"] <= lat < K["lat1"] and K["lon0"] <= lon < K["lon1"]):
+        return None
+    no = K["lon1"] - K["lon0"]
+    o, m = struct.unpack_from("<II", daten, K["index_ab"] + ((lat - K["lat0"]) * no + (lon - K["lon0"])) * 8)
+    if o == HINDERNIS_FEHLT:
+        return None
+    return json.loads(gzip.decompress(daten[o:o + m]).decode("utf-8"))
+
+
+def hindernis_zelle_gedeckt(kachel: dict | None, lat: float, lon: float, n: int = 120) -> bool:
+    """Liegt die 30″-Zelle des Punkts ganz in Deutschland (Hindernisdaten vollständig)? Wie die App."""
+    import base64
+    if not kachel or kachel["a"] == "keine":
+        return False
+    if kachel["a"] == "voll":
+        return True
+    la, lo = math.floor(lat), math.floor(lon)
+    r = min(n - 1, int((la + 1 - lat) * n)); c = min(n - 1, int((lon - lo) * n))
+    i = r * n + c
+    return bool(base64.b64decode(kachel["m"])[i >> 3] >> (i & 7) & 1)

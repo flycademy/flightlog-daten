@@ -1,4 +1,4 @@
-# Tests mit künstlichen Daten (ohne Netz zu DWD, Copernicus, GeoNames, open flightmaps)
+# Tests mit künstlichen Daten (ohne Netz zu DWD, Copernicus, GeoNames, open flightmaps, DFS)
 name: Tests
 on:
   push:
@@ -20,3 +20,4 @@ jobs:
       - run: python tests/test_veroeffentlichen.py
       - run: python tests/test_luftraum.py
       - run: python tests/test_pisten.py
+      - run: python tests/test_hindernisse.py

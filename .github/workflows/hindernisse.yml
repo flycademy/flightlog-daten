@@ -1,0 +1,41 @@
+# Luftfahrthindernisse aus dem DFS-Datensatz „ED Obstacles Area 1“ (CC BY 4.0) — täglich und von Hand (Build 25s).
+# Laufender und nächster AIRAC-Zyklus, vereinigt. Der Flight Log rechnet damit die MSA; der Browser ruft die DFS nicht ab.
+name: Hindernisse
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      veroeffentlichen:
+        description: "für den Flight Log veröffentlichen (Download im Release „daten“, den der Server abholt)"
+        type: boolean
+        default: true
+      ergebnis:
+        description: "Ergebnis zusätzlich im Zweig ergebnis-hindernisse ablegen (zur Prüfung)"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  hindernisse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Hindernisse aufbereiten
+        run: bash werkzeug/lauf.sh python -m fcy_daten.hindernisse --aus out/hindernisse.bin
+      - name: Prüfen
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen hindernisse out/hindernisse.bin
+      - name: Veröffentlichen
+        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/hindernisse.bin
+      - name: Ergebnis ablegen
+        if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
+        run: bash werkzeug/ergebnis.sh ergebnis-hindernisse out/hindernisse.bin
