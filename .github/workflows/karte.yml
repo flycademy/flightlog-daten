@@ -1,0 +1,90 @@
+# ICAO-Optik für ganz Deutschland (Georgi 17.11.2026: „Deutschland zuerst“, „GitHub-Job, Server holt“): Kartenkacheln im Stil der
+# Übungskarte Harz–Elbe aus BKG DLM250/DGM200, Copernicus GLO-30, DFS (Lufträume, Funkfeuer, Hindernisse), open flightmaps
+# (Meldepunkte, Frequenzen), OurAirports. Täglich wird geprüft, ob ein AIRAC-Zyklus (laufender, nächster) noch fehlt; nur dann
+# wird gerechnet (rund 1 Stunde je Zyklus). Ergebnis: karte.bin (Verzeichnis) und karte-<Zyklus>-*.bin im Release „daten“.
+name: Karte
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+    inputs:
+      zyklen:
+        description: "auto = fehlende Zyklen; 0 = laufender, 1 = nächster, 0,1 = beide"
+        type: string
+        default: "auto"
+      veroeffentlichen:
+        description: "für den Flight Log veröffentlichen (Release „daten“)"
+        type: boolean
+        default: false
+      gebiet:
+        description: "nur ein Ausschnitt zur Probe: lon0 lat0 lon1 lat1 (leer = ganz Deutschland)"
+        type: string
+        default: ""
+      zoom:
+        description: "Zoomstufen von bis"
+        type: string
+        default: "8 12"
+      probe_ofm:
+        description: "nur open flightmaps (OFMX) holen und als Artefakt ablegen (Entwicklung)"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: karte
+  cancel-in-progress: false
+jobs:
+  karte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+      - name: Platz schaffen
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h / ; nproc ; free -g
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-karte.txt
+      - name: Schriften (Nimbus Sans wie die Übungskarte)
+        run: sudo apt-get install -y -q fonts-urw-base35 >/dev/null && fc-list | grep -c -i "nimbus sans"
+      - name: Probe open flightmaps
+        if: github.event_name == 'workflow_dispatch' && inputs.probe_ofm
+        run: |
+          Z=$(python -c "import datetime as d; from fcy_daten.luftraum import zyklus; print(zyklus(d.datetime.now(d.timezone.utc))[0])")
+          bash werkzeug/lauf.sh python -m fcy_daten.karte.ofm --zyklus "$Z" --aus out/ofm_plaetze.json --roh out/ofmx_ed.ofmx
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.probe_ofm
+        with:
+          name: ofm-probe
+          path: out/
+          retention-days: 3
+      - name: Zwischenspeicher Grunddaten
+        if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
+        uses: actions/cache@v4
+        with:
+          path: |
+            arbeit/topo.pkl
+            arbeit/dgm200.npz
+            arbeit/gelaende.json
+            arbeit/gelaende_z*.npy
+            arbeit/deckung.json
+          key: karte-basis-v1-${{ hashFiles('fcy_daten/karte/daten.py', 'fcy_daten/karte/gelaende.py') }}
+      - name: Karte rechnen
+        if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARGS="--arbeit arbeit --roh roh --aus out/karte --zyklen ${{ inputs.zyklen || 'auto' }} --zoom ${{ inputs.zoom || '8 12' }}"
+          if [ -n "${{ inputs.gebiet }}" ]; then ARGS="$ARGS --gebiet ${{ inputs.gebiet }}"; fi
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.veroeffentlichen }}" = "true" ]; then ARGS="$ARGS --veroeffentlichen"; fi
+          bash werkzeug/lauf.sh python -m fcy_daten.karte.lauf $ARGS
+      - name: Probe ablegen (Ausschnitt)
+        if: github.event_name == 'workflow_dispatch' && inputs.gebiet != '' && !inputs.probe_ofm
+        uses: actions/upload-artifact@v4
+        with:
+          name: karte-probe
+          path: out/karte/
+          retention-days: 3

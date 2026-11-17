@@ -1,0 +1,7 @@
+# zusätzlich für den Job „Karte“ (ICAO-Optik)
+pyogrio>=0.10
+matplotlib>=3.9
+scipy>=1.13
+pygeomag>=1.1
+contourpy>=1.2
+pillow>=10.4
