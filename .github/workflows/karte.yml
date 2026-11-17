@@ -1,7 +1,9 @@
 # ICAO-Optik für ganz Deutschland (Georgi 17.11.2026: „Deutschland zuerst“, „GitHub-Job, Server holt“): Kartenkacheln im Stil der
 # Übungskarte Harz–Elbe aus BKG DLM250/DGM200, Copernicus GLO-30, DFS (Lufträume, Funkfeuer, Hindernisse), open flightmaps
-# (Meldepunkte, Frequenzen), OurAirports. Täglich wird geprüft, ob ein AIRAC-Zyklus (laufender, nächster) noch fehlt; nur dann
-# wird gerechnet (rund 1 Stunde je Zyklus). Ergebnis: karte.bin (Verzeichnis) und karte-<Zyklus>-*.bin im Release „daten“.
+# (Meldepunkte, Platzhöhen, Frequenzen, Pisten), OurAirports. Täglich wird geprüft, ob ein AIRAC-Zyklus (laufender, nächster) noch
+# fehlt; nur dann wird gerechnet (rund 1 Stunde je Zyklus). Ergebnis: karte.bin (Verzeichnis) und karte-<Zyklus>-*.bin im Release „daten“.
+# Der tägliche Lauf veröffentlicht erst, wenn die Repository-Variable KARTE_VEROEFFENTLICHEN = ja gesetzt ist (Freigabe der
+# Veröffentlichung durch den Accountable Manager); bis dahin läuft er gar nicht. Von Hand gestartet: veroeffentlichen = Haken.
 name: Karte
 on:
   schedule:
@@ -35,6 +37,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   karte:
+    if: github.event_name != 'schedule' || vars.KARTE_VEROEFFENTLICHEN == 'ja'
     runs-on: ubuntu-latest
     timeout-minutes: 345
     steps:
@@ -68,7 +71,7 @@ jobs:
             arbeit/gelaende.json
             arbeit/gelaende_z*.npy
             arbeit/deckung.json
-          key: karte-basis-v1-${{ hashFiles('fcy_daten/karte/daten.py', 'fcy_daten/karte/gelaende.py') }}
+          key: karte-basis-v2-${{ hashFiles('fcy_daten/karte/grund.txt', 'fcy_daten/karte/gelaende.py') }}
       - name: Karte rechnen
         if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
         env:

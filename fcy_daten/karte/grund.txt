@@ -1,0 +1,3 @@
+Fassung der Grunddaten im Zwischenspeicher des Jobs „Karte“ (topo.pkl, dgm200.npz, gelaende_*.npy, deckung.json): 1
+Hochzählen, wenn sich daten.topo, daten.dgm oder lauf.deckung ändern (gelaende.py geht von selbst in den Schlüssel ein).
+Änderungen an den Flugplätzen (daten.plaetze) brauchen das nicht: sie werden je Zyklus neu gerechnet.
