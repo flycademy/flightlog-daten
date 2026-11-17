@@ -4,7 +4,11 @@
   2. Grunddaten (einmal, im Zwischenspeicher des Jobs): BKG DLM250 und DGM200, OurAirports, Copernicus GLO-30 → topo.pkl,
      dgm200.npz, Gelände-Raster
   3. Je fehlendem Zyklus: Luftfahrtdaten (DFS, open flightmaps), Flugplätze, Kacheln, Bündel, Prüfung
-  4. Veröffentlichen: Bündel, dann karte.bin und karte.bin.json (Beschreibung zuletzt); alte Zyklen nach Ablauf entfernen
+  4. Veröffentlichen (ab Build 25y nur verschlüsselt, Accountable Manager 17.11.2026): jedes neue Bündel als <bündel>.v für den Schlüssel
+     des Servers (fcy_daten/schluessel.pub), dann das Verzeichnis karte-verzeichnis.bin und .json (Beschreibung zuletzt);
+     alte Zyklen nach Ablauf entfernen. Das Verzeichnis bleibt lesbar (Zyklen, Dateinamen, Größen, Prüfsummen, Fingerabdruck
+     des Schlüssels, Umriss Deutschlands, Quellen); die Kartenbilder kann nur der Server lesen. Ohne Schlüssel im Repository
+     veröffentlicht der Job nichts (und rechnet im täglichen Lauf gar nicht erst).
 
 Aufruf: python -m fcy_daten.karte.lauf --arbeit <Ordner> --aus out/karte [--zyklen auto|0|1|0,1] [--veroeffentlichen]
         [--gebiet lon0 lat0 lon1 lat1] [--zoom 8 12] [--prozesse N]
@@ -24,6 +28,7 @@ import zipfile
 
 from .. import luftraum_dfs as LD
 from .. import netz
+from .. import schloss as S
 from . import buendel as BU
 
 BKG_DLM = "https://daten.gdz.bkg.bund.de/produkte/dlm/dlm250/aktuell/dlm250.utm32s.shape.ebenen.zip"
@@ -32,6 +37,7 @@ OA = "https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/{n}
 COP = "https://copernicus-dem-30m.s3.amazonaws.com/{n}/{n}.tif"
 RELEASE = "https://github.com/flycademy/flightlog-daten/releases/download/daten/"
 TAG = "daten"
+VERZ = "karte-verzeichnis.bin"      # ab 25y; „karte.bin“ (Build 25x) wird nie veröffentlicht
 HIER = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -51,11 +57,16 @@ def plan(wahl: str) -> list[dict]:
     if wahl != "auto":
         ns = {int(x) for x in wahl.split(",")}
         return [z for z in zy if z["n"] in ns]
-    roh = netz.hole(RELEASE + "karte.bin", ok404=True)
+    roh = netz.hole(RELEASE + VERZ, ok404=True)
     da = set()
     if roh:
         tmp = os.path.join("/tmp", "karte_alt.bin"); open(tmp, "wb").write(roh)
-        da = {z["zyklus"] for z in BU.verzeichnis_lesen(tmp).get("zyklen", [])}
+        alt = BU.verzeichnis_lesen(tmp)
+        pk = S.oeffentlich_laden()
+        if pk is not None and alt.get("schluessel") == S.fp_hex(pk):
+            da = {z["zyklus"] for z in alt.get("zyklen", [])}
+        else:
+            log("Verzeichnis für einen anderen Schlüssel: alle Zyklen neu")   # z. B. neuer Schlüssel auf dem Server
     return [z for z in zy if z["zyklus"] not in da]
 
 
@@ -104,7 +115,8 @@ def _py(mod, *args):
 def zyklus_rechnen(z: dict, arbeit: str, roh: str, aus: str, zoom, gebiet, prozesse) -> str:
     zk = z["zyklus"]; t0 = time.time()
     lr = os.path.join(arbeit, "luftraum.bin")
-    open(lr, "wb").write(netz.hole(RELEASE + "luftraum.bin", timeout=120))
+    if not os.path.exists(lr):                       # ab 25y selbst rechnen (die Datei im Release ist verschlüsselt)
+        _py("fcy_daten.luftraum", "--aus", lr)
     _py("fcy_daten.karte.luftfahrt", "--arbeit", arbeit, "--luftraum", lr, "--n", str(z["n"]))
     ofm_ad = os.path.join(arbeit, f"ofm_plaetze_{zk}.json")
     try:
@@ -147,27 +159,42 @@ def deckung(arbeit: str):
 
 
 def veroeffentlichen(aus: str):
+    pk = S.oeffentlich_laden()
+    if pk is None:
+        raise SystemExit("kein öffentlicher Schlüssel des Servers in fcy_daten/schluessel.pub — nichts veröffentlicht")
+    fp = S.fp_hex(pk)
     v = BU.verzeichnis_lesen(os.path.join(aus, "karte.bin"))
-    namen = [n for z in v["zyklen"] for n in z["dateien"] if os.path.exists(os.path.join(aus, n))]
-    for n in namen:
-        subprocess.run(["gh", "release", "upload", TAG, os.path.join(aus, n), "--clobber"], check=True)
-        log(f"hochgeladen: {n}")
-    d = open(os.path.join(aus, "karte.bin"), "rb").read()
-    beschr = {"datei": "karte.bin", "art": "karte", "groesse": len(d), "sha256": hashlib.sha256(d).hexdigest(),
+    neu = 0
+    for z in v["zyklen"]:
+        for n, d in z["dateien"].items():
+            p = os.path.join(aus, n)
+            if os.path.exists(p):                    # in diesem Lauf gerechnet: verschlüsseln und hochladen
+                r = S.verschluesseln(p, p + ".v", pk)
+                assert r["klar_sha256"] == d["sha256"] and r["klar_groesse"] == d["groesse"], n
+                d["v"] = {"groesse": r["groesse"], "sha256": r["sha256"]}
+                subprocess.run(["gh", "release", "upload", TAG, p + ".v", "--clobber"], check=True)
+                neu += 1
+            elif "v" not in d:
+                raise SystemExit(f"{n}: weder in diesem Lauf gerechnet noch verschlüsselt veröffentlicht")
+    log(f"hochgeladen: {neu} Bündel (verschlüsselt, Schlüssel {fp})")
+    v["schluessel"] = fp
+    BU.verzeichnis_schreiben(os.path.join(aus, VERZ), v)
+    d = open(os.path.join(aus, VERZ), "rb").read()
+    beschr = {"datei": VERZ, "art": "karte", "groesse": len(d), "sha256": hashlib.sha256(d).hexdigest(), "schluessel": fp,
               "fassung": "+".join(z["zyklus"] for z in v["zyklen"]), "veroeffentlicht": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    json.dump(beschr, open(os.path.join(aus, "karte.bin.json"), "w"))
-    subprocess.run(["gh", "release", "upload", TAG, os.path.join(aus, "karte.bin"), "--clobber"], check=True)
-    subprocess.run(["gh", "release", "upload", TAG, os.path.join(aus, "karte.bin.json"), "--clobber"], check=True)
-    log(f"karte.bin veröffentlicht: Zyklen {beschr['fassung']}")
+    json.dump(beschr, open(os.path.join(aus, VERZ + ".json"), "w"))
+    subprocess.run(["gh", "release", "upload", TAG, os.path.join(aus, VERZ), "--clobber"], check=True)
+    subprocess.run(["gh", "release", "upload", TAG, os.path.join(aus, VERZ + ".json"), "--clobber"], check=True)
+    log(f"{VERZ} veröffentlicht: Zyklen {beschr['fassung']}")
     # Bündel abgelaufener Zyklen entfernen (zwei Tage nach dem Ende, damit Server mit altem Verzeichnis nicht ins Leere greifen)
-    behalten = {n for z in v["zyklen"] for n in z["dateien"]}
+    behalten = {n + ".v" for z in v["zyklen"] for n in z["dateien"]}
     r = subprocess.run(["gh", "release", "view", TAG, "--json", "assets", "--jq", ".assets[].name"], capture_output=True, text=True, check=True)
     from ..luftraum import zyklus as _zyklus
     grenze = _zyklus(dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2))[0]   # laufender Zyklus vor zwei Tagen
     for n in r.stdout.split():
-        if n.startswith("karte-") and n.endswith(".bin") and n not in behalten:
+        if n.startswith("karte-") and (n.endswith(".bin") or n.endswith(".bin.v")) and n not in behalten:
             zk = n.split("-")[1]
-            if zk.isdigit() and len(zk) == 4 and zk < grenze:
+            if zk.isdigit() and len(zk) == 4 and (zk < grenze or n.endswith(".bin")):    # offene Bündel nie stehen lassen
                 subprocess.run(["gh", "release", "delete-asset", TAG, n, "--yes"], check=False)
                 log(f"entfernt: {n}")
 
@@ -180,11 +207,17 @@ def main(argv=None) -> int:
     ap.add_argument("--prozesse", type=int, default=os.cpu_count() or 1)
     a = ap.parse_args(argv)
     os.makedirs(a.aus, exist_ok=True)
+    if a.veroeffentlichen and S.oeffentlich_laden() is None:
+        log("kein öffentlicher Schlüssel des Servers in fcy_daten/schluessel.pub — die Karte wird erst gerechnet, wenn er eingetragen ist")
+        return 0
     zy = plan(a.zyklen)
     log("zu rechnen:", ", ".join(f"{z['zyklus']} (ab {z['ab']})" for z in zy) or "nichts")
     if not zy:
         return 0
-    alt = netz.hole(RELEASE + "karte.bin", ok404=True)
+    alt = netz.hole(RELEASE + VERZ, ok404=True)      # übrige Zyklen übernehmen, wenn sie für denselben Schlüssel verschlüsselt sind
+    pk = S.oeffentlich_laden()
+    if alt and (pk is None or BU.verzeichnis_lesen_bytes(alt).get("schluessel") != S.fp_hex(pk)):
+        alt = None
     if alt:
         open(os.path.join(a.aus, "karte.bin"), "wb").write(alt)
     grunddaten(a.arbeit, a.roh, a.prozesse)

@@ -107,7 +107,7 @@ def test_ende_zu_ende():
                 P.HI_MIN["anzahl"] = 5
                 ok = P.pruefe_hindernisse(aus, "2026-11-15T12:00:00Z")
                 assert not ok        # höchstes Hindernis 1240 ft < 3000 ft: die Prüfung der echten Daten schlägt hier an
-                assert any("höchstes Hindernis 1240 ft" in z and z.startswith("❌") for z in P.ZEILEN)
+                assert any("höchstes Hindernis im erwarteten Bereich" in z and z.startswith("❌") for z in P.ZEILEN)   # 1240 ft: zu niedrig
                 assert all(z.startswith("✅") for z in P.ZEILEN if "höchstes" not in z), [z for z in P.ZEILEN if not z.startswith("✅")]
                 P.ZEILEN.clear()
                 assert not P.pruefe_hindernisse(aus, "2026-12-30T12:00:00Z")      # Zyklus 29.10. gilt nicht mehr

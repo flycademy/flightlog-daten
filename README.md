@@ -1,8 +1,9 @@
 # flightlog-daten
 
-Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), aufbereitet mit GitHub Actions und als Download im
-Release **„daten“** veröffentlicht. Der Datendienst des Flight Log (`private/flightlog/dienst.php`) holt sie sich von
-dort selbst in den nicht öffentlichen Datenordner; dafür braucht es kein FTP-Konto und keine Zugangsdaten. Der Flight
+Daten für den FlyCademy Flight Log (training.flycademy.de/flightlog), aufbereitet mit GitHub Actions und im Release
+**„daten“** abgelegt — ab Build 25y **verschlüsselt**: lesen kann sie nur der Server des Flight Log (siehe „Verschlüsselung“).
+Der Datendienst des Flight Log (`private/flightlog/dienst.php`) holt sie sich selbst in den nicht öffentlichen Datenordner;
+dafür braucht es kein FTP-Konto, und auf GitHub liegt kein Geheimnis. Der Flight
 Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoNames, open flightmaps, OurAirports, DFS oder GitHub.
 
 | Job | Quelle | Wann | Datei auf dem Server |
@@ -53,20 +54,30 @@ Log fragt nur den eigenen Server; kein Browser spricht mit DWD, Copernicus, GeoN
 
 Das Dateiformat beschreibt `fcy_daten/format.py`. Gelesen werden die Dateien von `private/flightlog/dienst.php` im Paket des Flight Log.
 
+## Verschlüsselung (ab Build 25y, Accountable Manager 17.11.2026)
+
+- Der Server des Flight Log erzeugt sein Schlüsselpaar selbst (`private/flightlog/daten/schluessel/geheim.key` und `oeffentlich.txt`). Der geheime Teil verlässt den Server nie; eine Sicherungskopie legt der Accountable Manager mit FileZilla außerhalb der Arbeitsordner ab.
+- Der öffentliche Teil steht in `fcy_daten/schluessel.pub`. Mit ihm kann man nur verschlüsseln. Solange die Datei fehlt, legen die Jobs nur offen ab, und die Karte wird gar nicht veröffentlicht.
+- Jeder Job legt `<datei>.v` und `<datei>.v.json` ab (Größe und SHA-256 der verschlüsselten Datei und des Klartexts, Fingerabdruck des Schlüssels, Fassung). Verfahren: libsodium, je Datei ein neuer Dateischlüssel, versiegelt für den Server (`crypto_box_seal`), die Datei in Stücken zu 1 MiB mit `crypto_secretstream_xchacha20poly1305` (Aufbau in `fcy_daten/schloss.py`).
+- **Übergang:** Solange die Repository-Variable `FCY_OFFEN` nicht `nein` ist, legen die Jobs zusätzlich die offenen Dateien ab, damit ältere Builds (bis 25x) weiter Daten bekommen. Nach dem „ja“ des Accountable Managers entfallen sie.
+- **Karte:** nur verschlüsselt (`karte-<Zyklus>-*.bin.v`). Lesbar bleibt das Verzeichnis `karte-verzeichnis.bin`: Zyklen, Dateinamen, Größen, Prüfsummen, Fingerabdruck, Umriss Deutschlands, Quellen. Ändert sich der Schlüssel, rechnet der Job alle Zyklen neu.
+- **Zweige `ergebnis-…`:** nur verschlüsselt mit einem Prüfschlüssel, den der Prüfer beim Start angibt (Eingabe `pruefschluessel`); ohne ihn kein Ergebnis. Der Zweig `stand` (Lebenszeichen des Winds) enthält nur die Beschreibung.
+- **Protokolle der Läufe:** Zahlen und Prüfergebnisse, keine Einzelwerte aus den Daten.
+
 ## So kommen die Daten auf den Server
 
-1. Jeder Job rechnet, prüft und lädt seine Datei mit einer Beschreibung (`….json`: Größe, SHA-256, Fassung) in das Release `daten` hoch. Dafür reicht das eingebaute `GITHUB_TOKEN`; es gibt keine Secrets.
+1. Jeder Job rechnet, prüft und lädt seine Datei mit Beschreibung in das Release `daten` hoch (verschlüsselt, im Übergang auch offen). Dafür reicht das eingebaute `GITHUB_TOKEN`; es gibt keine Secrets.
 2. `dienst.php` holt sich die Dateien von `https://github.com/flycademy/flightlog-daten/releases/download/daten/…`:
    - fehlt eine Datei, sofort;
    - sonst im Hintergrund nach der Antwort, Wind spätestens alle 10 Minuten, Luftraum alle 6 Stunden, Gelände, Orte, Pisten und Hindernisse täglich (Hindernisse nach einer Woche ohne Prüfung vor der Antwort).
-3. Der Dienst tauscht eine Datei nur aus, wenn Größe und Prüfsumme zur Beschreibung passen. Klappt ein Abruf nicht, bleibt die vorige Datei.
+3. Der Dienst nimmt die verschlüsselte Fassung, wenn er sie entschlüsseln kann, sonst (im Übergang) die offene. Er tauscht eine Datei nur aus, wenn Größe und Prüfsumme zur Beschreibung passen. Klappt ein Abruf nicht, bleibt die vorige Datei.
 
 **Einrichten:** nichts. Gelände und Orte einmal von Hand starten (Actions → **Gelände** bzw. **Orte** → „Run workflow“), ebenso **Hindernisse** beim ersten Mal, damit die Datei vor dem ersten Lauf nach Plan da ist. Danach laufen Wind (alle 3 Stunden), Luftraum und Hindernisse (täglich), Pisten (wöchentlich) und Orte (monatlich) von selbst.
 
 ## Prüfen
 
-- **Ergebnisse ansehen:** Mit „Ergebnis ablegen“ landet die erzeugte Datei im Zweig `ergebnis-…`, zum Nachprüfen.
-- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_veroeffentlichen.py`, `python tests/test_luftraum.py`, `python tests/test_luftraum_dfs.py`, `python tests/test_pisten.py` und `python tests/test_hindernisse.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
+- **Ergebnisse ansehen:** Mit „Ergebnis ablegen“ und einem Prüfschlüssel (`python -m fcy_daten.schloss neu <Ordner>`, öffentlichen Teil als `pruefschluessel` eingeben) landet die erzeugte Datei verschlüsselt im Zweig `ergebnis-…`; entschlüsseln mit `python -m fcy_daten.schloss entschluesseln <datei>.v --geheim <Ordner>/geheim.key --aus <datei>`.
+- **Tests:** `python tests/test_wind.py`, `python tests/test_gelaende_orte.py`, `python tests/test_schloss.py`, `python tests/test_veroeffentlichen.py`, `python tests/test_karte_veroeffentlichen.py`, `python tests/test_luftraum.py`, `python tests/test_luftraum_dfs.py`, `python tests/test_pisten.py` und `python tests/test_hindernisse.py` laufen mit künstlichen Daten ohne Netz. Sie laufen auch bei jedem Push.
 
 ## Lizenzen der Daten
 

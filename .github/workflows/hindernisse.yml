@@ -11,9 +11,13 @@ on:
         type: boolean
         default: true
       ergebnis:
-        description: "Ergebnis zusätzlich im Zweig ergebnis-hindernisse ablegen (zur Prüfung)"
+        description: "Ergebnis zusätzlich verschlüsselt im Zweig ergebnis-hindernisse ablegen (zur Prüfung)"
         type: boolean
         default: false
+      pruefschluessel:
+        description: "öffentlicher Prüfschlüssel (FCY-OEFFENTLICH-1 …): das Ergebnis im Zweig wird damit verschlüsselt; ohne ihn kein Ergebnis"
+        type: string
+        default: ""
 permissions:
   contents: write
 jobs:
@@ -27,15 +31,20 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Umriss Deutschlands (Lufträume aus open flightmaps, nur für diesen Lauf)
+        run: bash werkzeug/lauf.sh python -m fcy_daten.luftraum --aus out/luftraum.bin
       - name: Hindernisse aufbereiten
-        run: bash werkzeug/lauf.sh python -m fcy_daten.hindernisse --aus out/hindernisse.bin
+        run: bash werkzeug/lauf.sh python -m fcy_daten.hindernisse --aus out/hindernisse.bin --umriss out/luftraum.bin
       - name: Prüfen
         run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen hindernisse out/hindernisse.bin
       - name: Veröffentlichen
         if: github.event_name == 'schedule' || inputs.veroeffentlichen
         env:
           GH_TOKEN: ${{ github.token }}
+          FCY_OFFEN: ${{ vars.FCY_OFFEN }}
         run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/hindernisse.bin
       - name: Ergebnis ablegen
         if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
+        env:
+          FCY_PRUEFSCHLUESSEL: ${{ inputs.pruefschluessel }}
         run: bash werkzeug/ergebnis.sh ergebnis-hindernisse out/hindernisse.bin

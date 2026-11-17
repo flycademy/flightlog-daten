@@ -104,7 +104,10 @@ def verzeichnis_schreiben(pfad, inhalt):
 
 
 def verzeichnis_lesen(pfad):
-    d = open(pfad, "rb").read()
+    return verzeichnis_lesen_bytes(open(pfad, "rb").read())
+
+
+def verzeichnis_lesen_bytes(d: bytes):
     assert d[:4] == b"FCYM"
     n = struct.unpack("<I", d[4:8])[0]
     return json.loads(d[8:8 + n].decode("utf-8"))

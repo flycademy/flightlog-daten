@@ -1,9 +1,11 @@
-# ICAO-Optik für ganz Deutschland (Georgi 17.11.2026: „Deutschland zuerst“, „GitHub-Job, Server holt“): Kartenkacheln im Stil der
+# ICAO-Optik für ganz Deutschland (Accountable Manager 17.11.2026: „Deutschland zuerst“, „GitHub-Job, Server holt“): Kartenkacheln im Stil der
 # Übungskarte Harz–Elbe aus BKG DLM250/DGM200, Copernicus GLO-30, DFS (Lufträume, Funkfeuer, Hindernisse), open flightmaps
 # (Meldepunkte, Platzhöhen, Frequenzen, Pisten), OurAirports. Täglich wird geprüft, ob ein AIRAC-Zyklus (laufender, nächster) noch
-# fehlt; nur dann wird gerechnet (rund 30 Minuten je Zyklus, dazu beim ersten Lauf rund 10 Minuten Grunddaten). Ergebnis: karte.bin (Verzeichnis) und karte-<Zyklus>-*.bin im Release „daten“.
-# Der tägliche Lauf veröffentlicht erst, wenn die Repository-Variable KARTE_VEROEFFENTLICHEN = ja gesetzt ist (Freigabe der
-# Veröffentlichung durch den Accountable Manager); bis dahin läuft er gar nicht. Von Hand gestartet: veroeffentlichen = Haken.
+# fehlt; nur dann wird gerechnet (rund 30 Minuten je Zyklus, dazu beim ersten Lauf rund 10 Minuten Grunddaten).
+# Ergebnis (ab Build 25y, Accountable Manager 17.11.2026: „nur unsere Seite soll die Dateien lesen können“): die Bündel nur verschlüsselt
+# (karte-<Zyklus>-*.bin.v, lesbar nur für den Server des Flight Log) und das Verzeichnis karte-verzeichnis.bin im Release „daten“.
+# Solange der öffentliche Schlüssel des Servers nicht in fcy_daten/schluessel.pub steht, rechnet und veröffentlicht der tägliche
+# Lauf nichts. Von Hand gestartet: veroeffentlichen = Haken; Proben (gebiet) nur verschlüsselt mit einem Prüfschlüssel.
 name: Karte
 on:
   schedule:
@@ -27,9 +29,13 @@ on:
         type: string
         default: "8 12"
       probe_ofm:
-        description: "nur open flightmaps (OFMX) holen und als Artefakt ablegen (Entwicklung)"
+        description: "nur open flightmaps (OFMX) holen und verschlüsselt im Zweig ergebnis-karte ablegen (Entwicklung)"
         type: boolean
         default: false
+      pruefschluessel:
+        description: "öffentlicher Prüfschlüssel (FCY-OEFFENTLICH-1 …) für Proben im Zweig ergebnis-karte; ohne ihn keine Probe"
+        type: string
+        default: ""
 permissions:
   contents: write
 concurrency:
@@ -37,7 +43,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   karte:
-    if: github.event_name != 'schedule' || vars.KARTE_VEROEFFENTLICHEN == 'ja'
     runs-on: ubuntu-latest
     timeout-minutes: 345
     steps:
@@ -60,6 +65,8 @@ jobs:
           bash werkzeug/lauf.sh python -m fcy_daten.karte.ofm --zyklus "$Z" --aus out/ofm_plaetze.json --roh out/ofmx_ed.ofmx
       - name: Probe ablegen (open flightmaps)
         if: github.event_name == 'workflow_dispatch' && inputs.probe_ofm
+        env:
+          FCY_PRUEFSCHLUESSEL: ${{ inputs.pruefschluessel }}
         run: bash werkzeug/ergebnis.sh ergebnis-karte out/ofm_plaetze.json
       - name: Zwischenspeicher Grunddaten
         if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
@@ -83,4 +90,6 @@ jobs:
           bash werkzeug/lauf.sh python -m fcy_daten.karte.lauf $ARGS
       - name: Probe ablegen (Ausschnitt, Zweig ergebnis-karte)
         if: github.event_name == 'workflow_dispatch' && inputs.gebiet != '' && !inputs.probe_ofm
+        env:
+          FCY_PRUEFSCHLUESSEL: ${{ inputs.pruefschluessel }}
         run: bash werkzeug/ergebnis.sh ergebnis-karte out/karte/*.bin arbeit/plaetze_*.json arbeit/ofm_plaetze_*.json

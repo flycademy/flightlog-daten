@@ -17,7 +17,9 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python tests/test_wind.py
       - run: python tests/test_gelaende_orte.py
+      - run: python tests/test_schloss.py
       - run: python tests/test_veroeffentlichen.py
+      - run: python tests/test_karte_veroeffentlichen.py
       - run: python tests/test_luftraum.py
       - run: python tests/test_luftraum_dfs.py
       - run: python tests/test_pisten.py

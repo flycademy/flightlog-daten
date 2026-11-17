@@ -154,10 +154,7 @@ def main(argv=None):
         erg = gipfel_einarbeiten(kacheln, g)
         print(f"Gipfel aus GeoNames: {len(g)} mit Höhe im Gebiet, {len(erg['angehoben'])} Zellen angehoben, "
               f"{len(erg['uebersprungen'])} übersprungen (mehr als {GIPFEL_GRENZE_M} m über dem Gelände)", flush=True)
-        for d, nm, h, alt, la, lo in erg["angehoben"][:12]:
-            print(f"  + {d:4d} m  {nm} {h} m (Gelände {alt} m) {la:.4f} {lo:.4f}", flush=True)
-        for d, nm, h, alt, la, lo in erg["uebersprungen"][:12]:
-            print(f"  übersprungen: {nm} {h} m, Gelände ringsum {alt} m ({la:.4f} {lo:.4f})", flush=True)
+        # ab 25y keine Einzelwerte im (öffentlichen) Protokoll
         gipfel_info = {"quelle": "GeoNames (CC BY 4.0)", "angehoben": len(erg["angehoben"]),
                        "uebersprungen": len(erg["uebersprungen"]), "grenze_m": GIPFEL_GRENZE_M}
     kopf = {"lat0": a.lat[0], "lat1": a.lat[1], "lon0": a.lon[0], "lon1": a.lon[1], "n": N,

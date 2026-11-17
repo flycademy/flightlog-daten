@@ -140,10 +140,8 @@ def pruefe_wind(pfad: str, vergleich: bool) -> bool:
                 gut = abs(kt - okt) <= 8 and (okt < 10 or ddir <= 30)
                 n += 1; schlecht += not gut
                 abw.append(f"{ic} 850 hPa ({z850:.0f} m): {dr:.0f}°/{kt:.0f} kt gegen {odr:.0f}°/{okt:.0f} kt")
-    for a in abw:
-        print("   " + a)
+    # ab 25y keine Einzelwerte im (öffentlichen) Protokoll, nur das Ergebnis
     melde(schlecht == 0, f"Vergleich mit Open-Meteo icon_d2 (+{st} h): {n - schlecht} von {n} innerhalb der Toleranz", wichtig=False)
-    ZEILEN.extend("  " + a for a in abw)
     ok &= melde(n == 0 or schlecht <= n // 2, "kein systematischer Fehler (höchstens die Hälfte außerhalb der Toleranz)")
     return ok
 
@@ -167,7 +165,7 @@ def pruefe_gelaende(pfad: str) -> bool:
             # Höchstwert im Umkreis von 1 Zelle (Gipfel kann am Zellrand liegen)
             r = int((math.floor(la) + 1 - la) * K["n"]); c = int((lo - math.floor(lo)) * K["n"])
             v = int(t[max(0, r - 1):r + 2, max(0, c - 1):c + 2].max())
-        ok &= melde(v is not None and mn <= v <= mx, f"{name}: {v} m (erwartet {mn}–{mx})")
+        ok &= melde(v is not None and mn <= v <= mx, f"{name}: " + ("im erwarteten Bereich" if v is not None and mn <= v <= mx else "außerhalb des erwarteten Bereichs"))
     g = K.get("gipfel")
     if g:
         print(f"   Gipfel aus GeoNames: {g['angehoben']} Zellen angehoben, {g['uebersprungen']} übersprungen (mehr als {g['grenze_m']} m über dem Gelände)")
@@ -286,9 +284,9 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None, dfs: bool = False) -> b
                 ok &= melde(False, f"{z['zyklus']}: Flugplatz {icao} fehlt"); continue
             lat, lon = a[3], a[4]
             c = [e for e in lr if e["t"] == "CTR" and _ascii(e["n"]).startswith(_ascii(ctr)) and im_umriss(lon, lat, F.umriss_aus(e["p"]))]
-            ok &= melde(bool(c), f"{z['zyklus']}: {icao} ({lat:.3f} N, {lon:.3f} E) liegt in der CTR " + (", ".join(f"{e['n']} {e['u'][1]}–{e['o'][1]} {e['o'][2]} {e['o'][0]}" for e in c) or ctr + " — nicht gefunden"))
+            ok &= melde(bool(c), f"{z['zyklus']}: {icao} liegt in der CTR {ctr}" + ("" if c else " — nicht gefunden"))
             ok &= melde(any(im_umriss(lon, lat, u) for u in D), f"{z['zyklus']}: {icao} liegt im Umriss Deutschlands")
-            ok &= melde(any(x[5] == icao for x in dp) or icao in ("EDDF",), f"{z['zyklus']}: Meldepunkte zu {icao}: " + ", ".join(x[0] for x in dp if x[5] == icao)[:120], wichtig=False)
+            ok &= melde(any(x[5] == icao for x in dp) or icao in ("EDDF",), f"{z['zyklus']}: {sum(1 for x in dp if x[5] == icao)} Meldepunkte zu {icao}", wichtig=False)
         aussen = [(n, la, lo) for n, la, lo in (("Zürich", 47.46, 8.55), ("Wien", 48.11, 16.57), ("Amsterdam", 52.31, 4.76), ("Prag", 50.10, 14.26))]
         ok &= melde(not any(im_umriss(lo, la, u) for _, la, lo in aussen for u in D), f"{z['zyklus']}: Zürich, Wien, Amsterdam, Prag liegen außerhalb des Umrisses")
     return ok
@@ -327,7 +325,7 @@ def pruefe_pisten(pfad: str) -> bool:
     for ic, rid, rdir, rlen, rsurf in PI_PROBEN:
         r = next((x for x in alle.get(ic, []) if x[0] == rid), None)
         ok &= melde(bool(r) and r[1] == rdir and r[2] is not None and abs(r[2] - rlen) <= 60 and r[4].startswith(rsurf),
-                    f"{ic} {rid}: " + (f"{r[1]}°, {r[2]} m (verfügbar zur Landung {r[3]} m), {r[4]}" if r else "fehlt"))
+                    f"{ic} {rid}: " + (("wie erwartet" if r[1] == rdir and r[2] is not None and abs(r[2] - rlen) <= 60 and r[4].startswith(rsurf) else "weicht ab") if r else "fehlt"))
     return ok
 
 
@@ -384,7 +382,7 @@ def pruefe_hindernisse(pfad: str, jetzt: str | None = None) -> bool:
     k = kacheln.get((52, 10))
     ok &= melde(bool(k) and len(k["h"]) >= HI_MIN["N52E010"], f"Kachel N52E010 (Braunschweig): {len(k['h']) if k else 0} Hindernisteile")
     hoch = max((r[2] for k in kacheln.values() for r in k["h"]), default=0)
-    ok &= melde(3000 <= hoch <= 12000, f"höchstes Hindernis {hoch} ft MSL")
+    ok &= melde(3000 <= hoch <= 12000, "höchstes Hindernis im erwarteten Bereich (3000–12 000 ft MSL)")
     for name, la, lo, soll in HI_PROBEN:
         ist = F.hindernis_zelle_gedeckt(kacheln.get((math.floor(la), math.floor(lo))), la, lo)
         ok &= melde(ist == soll, f"Abdeckung {name}: {'Hindernisdaten vollständig' if ist else 'ohne Hindernisdaten'}")
