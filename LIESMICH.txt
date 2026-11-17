@@ -1,0 +1,1 @@
+Ergebnisse zur Prüfung legen die Jobs hier ab Build 25y nur verschlüsselt ab (Eingabe „pruefschluessel“, siehe README).
