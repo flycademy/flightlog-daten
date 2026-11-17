@@ -4,8 +4,8 @@
 # fehlt; nur dann wird gerechnet (rund 30 Minuten je Zyklus, dazu beim ersten Lauf rund 10 Minuten Grunddaten).
 # Ergebnis (ab Build 25y, Accountable Manager 17.11.2026: „nur unsere Seite soll die Dateien lesen können“): die Bündel nur verschlüsselt
 # (karte-<Zyklus>-*.bin.v, lesbar nur für den Server des Flight Log) und das Verzeichnis karte-verzeichnis.bin im Release „daten“.
-# Solange der öffentliche Schlüssel des Servers nicht in fcy_daten/schluessel.pub steht, rechnet und veröffentlicht der tägliche
-# Lauf nichts. Von Hand gestartet: veroeffentlichen = Haken; Proben (gebiet) nur verschlüsselt mit einem Prüfschlüssel.
+# Solange der öffentliche Schlüssel des Servers nicht in fcy_daten/schluessel.pub steht, startet der Rechenjob gar nicht (Job
+# „schluessel“ vorweg, wenige Sekunden). Von Hand gestartet: veroeffentlichen = Haken; Proben (gebiet) nur verschlüsselt mit einem Prüfschlüssel.
 name: Karte
 on:
   schedule:
@@ -42,7 +42,26 @@ concurrency:
   group: karte
   cancel-in-progress: false
 jobs:
+  schluessel:
+    # Ohne öffentlichen Schlüssel des Servers gibt es nichts zu veröffentlichen: dann den Rechenjob gar nicht erst starten
+    # (spart den täglichen Lauf von rund 4,5 Minuten). Proben von Hand (ohne Veröffentlichen) laufen immer.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      da: ${{ steps.p.outputs.da }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: fcy_daten/schluessel.pub
+          sparse-checkout-cone-mode: false
+      - id: p
+        name: Schlüssel des Servers eingetragen?
+        run: |
+          if grep -q '^FCY-OEFFENTLICH-1 ' fcy_daten/schluessel.pub 2>/dev/null; then echo "da=ja" >> "$GITHUB_OUTPUT"
+          else echo "da=nein" >> "$GITHUB_OUTPUT"; echo "::notice title=Karte::kein öffentlicher Schlüssel des Servers in fcy_daten/schluessel.pub — nichts zu rechnen"; fi
   karte:
+    needs: schluessel
+    if: needs.schluessel.outputs.da == 'ja' || (github.event_name == 'workflow_dispatch' && (!inputs.veroeffentlichen || inputs.probe_ofm))
     runs-on: ubuntu-latest
     timeout-minutes: 345
     steps:

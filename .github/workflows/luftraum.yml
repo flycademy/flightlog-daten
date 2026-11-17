@@ -1,7 +1,9 @@
 # Lufträume, Flugplätze und VFR-Meldepunkte Deutschlands aus open flightmaps — täglich (laufender und nächster AIRAC-Zyklus;
 # der nächste steht etwa eine Woche vor Beginn bereit) und von Hand.
 # Dazu (ab Build 25w, Georgi 15.11.2026 Nr. 5) luftraum-dfs.bin: die Lufträume aus dem DFS-Datensatz ED Airspace, Flugplätze,
-# Meldepunkte und Umriss weiter aus open flightmaps. luftraum.bin bleibt für ältere Builds und den Job „Hindernisse“ (Umriss).
+# Meldepunkte und Umriss weiter aus open flightmaps. luftraum.bin bleibt für ältere Builds.
+# Hat open flightmaps gerade keine Datei für den laufenden Zyklus (so am 17.11.2026 nachmittags), nimmt der Job Flugplätze,
+# Meldepunkte und Umriss aus dem letzten erfolgreichen Lauf und legt die Lufträume der DFS trotzdem frisch ab.
 name: Luftraum
 on:
   schedule:
@@ -33,12 +35,26 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Lufträume aufbereiten
-        run: bash werkzeug/lauf.sh python -m fcy_daten.luftraum --aus out/luftraum.bin
+      - name: Lufträume des vorigen Laufs (Zwischenspeicher)
+        uses: actions/cache/restore@v4
+        with:
+          path: vorrat/luftraum.bin
+          key: luftraum-umriss-${{ github.run_id }}
+          restore-keys: luftraum-umriss-
+      - name: Lufträume aufbereiten (open flightmaps; fehlt die Datei, der letzte gute Stand)
+        id: lr
+        run: bash werkzeug/lauf.sh bash werkzeug/luftraum_umriss.sh out/luftraum.bin vorrat/luftraum.bin
+      - name: Lufträume für den nächsten Lauf merken
+        if: steps.lr.outputs.frisch == 'ja'
+        uses: actions/cache/save@v4
+        with:
+          path: vorrat/luftraum.bin
+          key: luftraum-umriss-${{ github.run_id }}
       - name: Prüfen
         run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen luftraum out/luftraum.bin
       - name: Veröffentlichen
-        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        # nur einen frisch gerechneten Stand; der vorige liegt schon im Release
+        if: (github.event_name == 'schedule' || inputs.veroeffentlichen) && steps.lr.outputs.frisch == 'ja'
         env:
           GH_TOKEN: ${{ github.token }}
           FCY_OFFEN: ${{ vars.FCY_OFFEN }}
