@@ -28,11 +28,17 @@ def test_veroeffentlichen():
         alt = os.environ["PATH"]
         os.environ["PATH"] = tmp + os.pathsep + alt
         os.environ["GITHUB_REPOSITORY"] = "flycademy/flightlog-daten"
+        alt_schl = os.environ.get("FCY_SCHLUESSEL")
+        os.environ["FCY_SCHLUESSEL"] = os.path.join(tmp, "fehlt.pub")   # ohne Schlüssel (auch wenn fcy_daten/schluessel.pub da ist)
         try:
             assert V.main([datei]) == 0
             assert V.main([datei]) == 0      # zweiter Lauf: Release ist da
         finally:
             os.environ["PATH"] = alt
+            if alt_schl is None:
+                os.environ.pop("FCY_SCHLUESSEL", None)
+            else:
+                os.environ["FCY_SCHLUESSEL"] = alt_schl
         b = json.load(open(datei + ".json", encoding="utf-8"))
         d = open(datei, "rb").read()
         assert b["groesse"] == len(d) and b["sha256"] == hashlib.sha256(d).hexdigest()
