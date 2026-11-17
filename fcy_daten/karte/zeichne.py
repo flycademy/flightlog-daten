@@ -1163,6 +1163,10 @@ def main(argv=None) -> int:
         x0, y0 = l2m.transform(a.gebiet[0], a.gebiet[1]); x1, y1 = l2m.transform(a.gebiet[2], a.gebiet[3])
         gebiet = box(x0, y0, x1, y1)
     t0 = time.time()
+    from matplotlib import font_manager as _fm
+    print("Schriften:", " · ".join(f"{st}: {os.path.basename(_fm.findfont(_fm.FontProperties(family=plt.rcParams['font.family'], style=st)))}"
+                                    for st in ("normal", "italic")), "· Breite „120.055“ 6 pt kursiv/normal:",
+          [round(float(v), 2) for v in (mass("120.055", 6.0, style="italic")[0], mass("120.055", 6.0)[0])], flush=True)
     D = vorbereiten(a.arbeit, a.zyklus, gebiet)
     print(f"Vorbereitet: {len(D['plaetze_sicht'])} Plätze, {len(D['hp'])} Höhenpunkte, {len(D['mef'])} MEF-Felder, {len(D['iso'])} Isogonen, "
           f"{time.time() - t0:.0f} s", flush=True)
