@@ -5,6 +5,7 @@ auf dem Server bleibt die vorige Datei, der Flight Log zeigt deren Laufzeit an.
   python -m fcy_daten.pruefen gelaende out/gelaende.bin
   python -m fcy_daten.pruefen orte out/orte.bin
   python -m fcy_daten.pruefen luftraum out/luftraum.bin [--jetzt 2026-10-26T12:00:00Z]
+  python -m fcy_daten.pruefen luftraum-dfs out/luftraum-dfs.bin [--jetzt …]
   python -m fcy_daten.pruefen pisten out/pisten.bin
   python -m fcy_daten.pruefen hindernisse out/hindernisse.bin [--jetzt 2026-11-15T12:00:00Z]
 
@@ -218,7 +219,14 @@ LR_PROBEN = [("EDVE", "BRAUNSCHWEIG"), ("EDDH", "HAMBURG"), ("EDDM", "MÜNCHEN")
 LR_MIN = {"lr": 700, "ad": 500, "dp": 250, "arten": {"CTR": 40, "TMA": 50, "R": 50, "RMZ": 10, "TMZ": 10}}
 
 
-def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
+def _ascii(s: str) -> str:
+    return s.upper().replace("Ä", "AE").replace("Ö", "OE").replace("Ü", "UE").replace("ß", "SS")
+
+
+LR_DFS_MIN = {"CTR": 40, "TMA": 50, "R": 50, "D": 5, "RMZ": 10, "TMZ": 10, "CLASS": 10, "HPGLDR": 30}
+
+
+def pruefe_luftraum(pfad: str, jetzt: str | None = None, dfs: bool = False) -> bool:
     import gzip as _gz
     import hashlib
     d = open(pfad, "rb").read()
@@ -228,6 +236,8 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
     t = (jetzt or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     ok &= melde(any(z["ab"] <= t < z["bis"] for z in Z), f"Zyklus für {t[:10]} enthalten")
     ok &= melde("open flightmaps" in K.get("quelle", ""), "Quellenangabe open flightmaps im Kopf")
+    if dfs:
+        ok &= melde("DFS" in K.get("quelle", "") and "CC BY 4.0" in K.get("quelle", ""), "Quellenangabe DFS (CC BY 4.0) im Kopf")
     for z in Z:
         roh = d[z["ab_byte"]:z["ab_byte"] + z["bytes"]]
         if not melde(hashlib.sha256(roh).hexdigest() == z["sha256"], f"{z['zyklus']}: Prüfsumme des Inhalts ({z['bytes'] // 1024} kB gzip)"):
@@ -245,6 +255,17 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
             arten[e["t"]] = arten.get(e["t"], 0) + 1
         ok &= melde(all(arten.get(a, 0) >= n for a, n in LR_MIN["arten"].items()),
                     f"{z['zyklus']}: Arten " + ", ".join(f"{a} {n}" for a, n in sorted(arten.items())))
+        if dfs:
+            ofm_arten = {}
+            for e in lr:
+                if e.get("q") == "ofm":
+                    ofm_arten[e["t"]] = ofm_arten.get(e["t"], 0) + 1
+            dfs_arten = {a: n - ofm_arten.get(a, 0) for a, n in arten.items()}
+            ok &= melde(all(dfs_arten.get(a, 0) >= n for a, n in LR_DFS_MIN.items()),
+                        f"{z['zyklus']}: aus dem DFS-Datensatz " + ", ".join(f"{a} {n}" for a, n in sorted(dfs_arten.items()) if n))
+            ok &= melde(set(ofm_arten) <= {"NRA", "GLDR", "I-GLDR", "HPGLDR"} and "stand_lr" in I,
+                        f"{z['zyklus']}: aus open flightmaps ergänzt nur " + (", ".join(f"{a} {n}" for a, n in sorted(ofm_arten.items())) or "nichts")
+                        + f"; Stand der Lufträume {I.get('stand_lr', '–')}")
         schlecht = []
         for e in lr:
             p = F.umriss_aus(e["p"])
@@ -264,7 +285,7 @@ def pruefe_luftraum(pfad: str, jetzt: str | None = None) -> bool:
             if a is None:
                 ok &= melde(False, f"{z['zyklus']}: Flugplatz {icao} fehlt"); continue
             lat, lon = a[3], a[4]
-            c = [e for e in lr if e["t"] == "CTR" and e["n"].upper().startswith(ctr) and im_umriss(lon, lat, F.umriss_aus(e["p"]))]
+            c = [e for e in lr if e["t"] == "CTR" and _ascii(e["n"]).startswith(_ascii(ctr)) and im_umriss(lon, lat, F.umriss_aus(e["p"]))]
             ok &= melde(bool(c), f"{z['zyklus']}: {icao} ({lat:.3f} N, {lon:.3f} E) liegt in der CTR " + (", ".join(f"{e['n']} {e['u'][1]}–{e['o'][1]} {e['o'][2]} {e['o'][0]}" for e in c) or ctr + " — nicht gefunden"))
             ok &= melde(any(im_umriss(lon, lat, u) for u in D), f"{z['zyklus']}: {icao} liegt im Umriss Deutschlands")
             ok &= melde(any(x[5] == icao for x in dp) or icao in ("EDDF",), f"{z['zyklus']}: Meldepunkte zu {icao}: " + ", ".join(x[0] for x in dp if x[5] == icao)[:120], wichtig=False)
@@ -372,13 +393,14 @@ def pruefe_hindernisse(pfad: str, jetzt: str | None = None) -> bool:
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum", "pisten", "hindernisse"])
+    ap.add_argument("art", choices=["wind", "gelaende", "orte", "luftraum", "luftraum-dfs", "pisten", "hindernisse"])
     ap.add_argument("datei")
     ap.add_argument("--vergleich", action="store_true")
     ap.add_argument("--jetzt", help="Zeitpunkt (ISO, UTC) statt der aktuellen Zeit — für Tests")
     a = ap.parse_args(argv)
     ok = {"wind": lambda: pruefe_wind(a.datei, a.vergleich), "gelaende": lambda: pruefe_gelaende(a.datei),
           "orte": lambda: pruefe_orte(a.datei), "luftraum": lambda: pruefe_luftraum(a.datei, a.jetzt),
+          "luftraum-dfs": lambda: pruefe_luftraum(a.datei, a.jetzt, dfs=True),
           "pisten": lambda: pruefe_pisten(a.datei), "hindernisse": lambda: pruefe_hindernisse(a.datei, a.jetzt)}[a.art]()
     zusammenfassung(f"Prüfung {a.art}")
     return 0 if ok else 1

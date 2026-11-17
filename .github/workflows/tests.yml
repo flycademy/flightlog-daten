@@ -19,5 +19,6 @@ jobs:
       - run: python tests/test_gelaende_orte.py
       - run: python tests/test_veroeffentlichen.py
       - run: python tests/test_luftraum.py
+      - run: python tests/test_luftraum_dfs.py
       - run: python tests/test_pisten.py
       - run: python tests/test_hindernisse.py

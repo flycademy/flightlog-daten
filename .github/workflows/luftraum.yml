@@ -1,5 +1,7 @@
 # Lufträume, Flugplätze und VFR-Meldepunkte Deutschlands aus open flightmaps — täglich (laufender und nächster AIRAC-Zyklus;
-# der nächste steht etwa eine Woche vor Beginn bereit) und von Hand
+# der nächste steht etwa eine Woche vor Beginn bereit) und von Hand.
+# Dazu (ab Build 25w, Georgi 15.11.2026 Nr. 5) luftraum-dfs.bin: die Lufträume aus dem DFS-Datensatz ED Airspace, Flugplätze,
+# Meldepunkte und Umriss weiter aus open flightmaps. luftraum.bin bleibt für ältere Builds und den Job „Hindernisse“ (Umriss).
 name: Luftraum
 on:
   schedule:
@@ -36,6 +38,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/luftraum.bin
+      - name: Lufträume der DFS dazu (luftraum-dfs.bin)
+        run: bash werkzeug/lauf.sh python -m fcy_daten.luftraum_dfs --ofm out/luftraum.bin --aus out/luftraum-dfs.bin
+      - name: Prüfen (DFS)
+        run: bash werkzeug/lauf.sh python -m fcy_daten.pruefen luftraum-dfs out/luftraum-dfs.bin
+      - name: Veröffentlichen (DFS)
+        if: github.event_name == 'schedule' || inputs.veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/luftraum-dfs.bin
       - name: Ergebnis ablegen
         if: github.event_name == 'workflow_dispatch' && inputs.ergebnis
-        run: bash werkzeug/ergebnis.sh ergebnis-luftraum out/luftraum.bin
+        run: bash werkzeug/ergebnis.sh ergebnis-luftraum out/luftraum.bin out/luftraum-dfs.bin
