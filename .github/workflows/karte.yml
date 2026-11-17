@@ -55,12 +55,9 @@ jobs:
         run: |
           Z=$(python -c "import datetime as d; from fcy_daten.luftraum import zyklus; print(zyklus(d.datetime.now(d.timezone.utc))[0])")
           bash werkzeug/lauf.sh python -m fcy_daten.karte.ofm --zyklus "$Z" --aus out/ofm_plaetze.json --roh out/ofmx_ed.ofmx
-      - uses: actions/upload-artifact@v4
+      - name: Probe ablegen (open flightmaps)
         if: github.event_name == 'workflow_dispatch' && inputs.probe_ofm
-        with:
-          name: ofm-probe
-          path: out/
-          retention-days: 3
+        run: bash werkzeug/ergebnis.sh ergebnis-karte out/ofm_plaetze.json
       - name: Zwischenspeicher Grunddaten
         if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
         uses: actions/cache@v4
@@ -81,10 +78,6 @@ jobs:
           if [ -n "${{ inputs.gebiet }}" ]; then ARGS="$ARGS --gebiet ${{ inputs.gebiet }}"; fi
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.veroeffentlichen }}" = "true" ]; then ARGS="$ARGS --veroeffentlichen"; fi
           bash werkzeug/lauf.sh python -m fcy_daten.karte.lauf $ARGS
-      - name: Probe ablegen (Ausschnitt)
+      - name: Probe ablegen (Ausschnitt, Zweig ergebnis-karte)
         if: github.event_name == 'workflow_dispatch' && inputs.gebiet != '' && !inputs.probe_ofm
-        uses: actions/upload-artifact@v4
-        with:
-          name: karte-probe
-          path: out/karte/
-          retention-days: 3
+        run: bash werkzeug/ergebnis.sh ergebnis-karte out/karte/*.bin arbeit/plaetze_*.json arbeit/ofm_plaetze_*.json
