@@ -79,6 +79,16 @@ jobs:
             arbeit/gelaende_z*.npy
             arbeit/deckung.json
           key: karte-basis-v2-${{ hashFiles('fcy_daten/karte/grund.txt', 'fcy_daten/karte/gelaende.py') }}
+      - name: Lufträume des vorigen Laufs (Zwischenspeicher)
+        if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
+        uses: actions/cache/restore@v4
+        with:
+          path: vorrat/luftraum.bin
+          key: luftraum-umriss-${{ github.run_id }}
+          restore-keys: luftraum-umriss-
+      - name: Lufträume (Umriss, Meldepunkte; nur für diesen Lauf)
+        if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
+        run: bash werkzeug/lauf.sh bash werkzeug/luftraum_umriss.sh arbeit/luftraum.bin vorrat/luftraum.bin
       - name: Karte rechnen
         if: "!(github.event_name == 'workflow_dispatch' && inputs.probe_ofm)"
         env:

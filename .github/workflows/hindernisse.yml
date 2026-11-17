@@ -31,8 +31,19 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Lufträume des vorigen Laufs (Zwischenspeicher)
+        uses: actions/cache/restore@v4
+        with:
+          path: vorrat/luftraum.bin
+          key: luftraum-umriss-${{ github.run_id }}
+          restore-keys: luftraum-umriss-
       - name: Umriss Deutschlands (Lufträume aus open flightmaps, nur für diesen Lauf)
-        run: bash werkzeug/lauf.sh python -m fcy_daten.luftraum --aus out/luftraum.bin
+        run: bash werkzeug/lauf.sh bash werkzeug/luftraum_umriss.sh out/luftraum.bin vorrat/luftraum.bin
+      - name: Lufträume für den nächsten Lauf merken
+        uses: actions/cache/save@v4
+        with:
+          path: vorrat/luftraum.bin
+          key: luftraum-umriss-${{ github.run_id }}
       - name: Hindernisse aufbereiten
         run: bash werkzeug/lauf.sh python -m fcy_daten.hindernisse --aus out/hindernisse.bin --umriss out/luftraum.bin
       - name: Prüfen
