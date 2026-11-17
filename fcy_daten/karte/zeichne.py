@@ -71,7 +71,8 @@ BROCKEN_M = (1181734.3, 6763881.4)            # 10,6157° E, 51,7991° N in Web-
 # =====================================================================================================================
 # Textmaße (pt) — einmal je Text, Schrift und Größe; die Lage folgt aus der Ausrichtung
 # =====================================================================================================================
-_MF = plt.figure(figsize=(2, 2), dpi=72)
+_MDPI = 720                                   # hoch messen: bei 72 dpi rundet das Hinting je nach Umgebung anders (Job 20,0 statt 21,7 pt)
+_MF = plt.figure(figsize=(2, 2), dpi=_MDPI)
 _MR = _MF.canvas.get_renderer()
 _MC: dict = {}
 
@@ -85,7 +86,7 @@ def mass(txt, fs, **kw):
         t = _MF.text(0, 0, txt, fontsize=fs, transform=IdentityTransform(), ha="left", va="bottom",
                      **{a: b for a, b in kw.items() if a in ("fontfamily", "weight", "style", "linespacing")})
         bb = t.get_window_extent(renderer=_MR)
-        v = (bb.width, bb.height); t.remove(); _MC[k] = v
+        v = (bb.width * 72 / _MDPI, bb.height * 72 / _MDPI); t.remove(); _MC[k] = v
     return v
 
 
@@ -1129,9 +1130,29 @@ def zeichne_block(args):
                 continue
             dd = os.path.join(_G["aus"], str(z), str(tx0 + i)); os.makedirs(dd, exist_ok=True)
             fn = os.path.join(dd, f"{ty0 + j}.webp" if s == 1 else f"{ty0 + j}@2x.webp")
-            Image.fromarray(np.ascontiguousarray(t), "RGBA").save(fn, "WEBP", quality=88, method=6)
+            Image.fromarray(np.ascontiguousarray(t), "RGBA").save(fn, "WEBP", quality=88 if s == 1 else 75, method=6)
             n += 1; b += os.path.getsize(fn)
     return n, b
+
+
+def _frei_gb():
+    try:
+        for z in open("/proc/meminfo"):
+            if z.startswith("MemAvailable:"):
+                return int(z.split()[1]) / 1048576
+    except OSError:
+        pass
+    return 0.0
+
+
+def _rss_gb():
+    try:
+        for z in open("/proc/self/status"):
+            if z.startswith("VmRSS:"):
+                return int(z.split()[1]) / 1048576
+    except OSError:
+        pass
+    return 0.0
 
 
 def bloecke(z, s, deckung_m):
@@ -1187,11 +1208,19 @@ def main(argv=None) -> int:
         for s in SCALES[z]:
             jobs = bloecke(z, s, deck)
             t1 = time.time(); n = b = 0
-            if a.prozesse > 1:
+            import gc
+            gc.collect(); frei = _frei_gb()
+            proz = max(1, min(a.prozesse, int((frei - 1.5) / (1.2 * s * s ** 0.5)))) if frei else a.prozesse
+            print(f"  z{z} x{s}: frei {frei:.1f} GB, Eltern {_rss_gb():.1f} GB, {proz} Prozesse", flush=True)
+            if proz > 1:
                 from concurrent.futures import ProcessPoolExecutor
-                with ProcessPoolExecutor(a.prozesse, mp_context=mp.get_context("fork")) as pool:
-                    for nn, bb in pool.map(zeichne_block, jobs):
-                        n += nn; b += bb
+                gc.freeze()                               # Elternobjekte nicht in die Kindprozesse kopieren lassen
+                try:
+                    with ProcessPoolExecutor(proz, mp_context=mp.get_context("fork")) as pool:
+                        for nn, bb in pool.map(zeichne_block, jobs):
+                            n += nn; b += bb
+                finally:
+                    gc.unfreeze()
             else:
                 for j in jobs:
                     nn, bb = zeichne_block(j); n += nn; b += bb
