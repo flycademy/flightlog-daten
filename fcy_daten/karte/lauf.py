@@ -91,7 +91,7 @@ def grunddaten(arbeit: str, roh: str, prozesse: int):
     log(f"Rohdaten geladen ({time.time() - t0:.0f} s)")
     dlm_e = os.path.join(dlm, "dlm250_ebenen")
     dgm_t = os.path.join(dgm, "dgm200", "dgm200_utm32s.tif")
-    _py("fcy_daten.karte.daten", "--dlm", dlm_e, "--dgm", dgm_t, "--oa", oa, "--hoehen", os.path.join(HIER, "platzhoehen.json"), "--aus", arbeit)
+    _py("fcy_daten.karte.daten", "--dlm", dlm_e, "--dgm", dgm_t, "--oa", oa, "--aus", arbeit)
     _py("fcy_daten.karte.gelaende", "--cop", cop, "--arbeit", arbeit)
 
 
@@ -113,8 +113,7 @@ def zyklus_rechnen(z: dict, arbeit: str, roh: str, aus: str, zoom, gebiet, proze
         log(f"open flightmaps {zk} nicht verfügbar ({e}) — Frequenzen und Pisten aus OurAirports"); ofm_ad = None
     import json as _j
     from . import daten as DA
-    h = _j.load(open(os.path.join(HIER, "platzhoehen.json"), encoding="utf-8"))["hoehen"]
-    P = DA.plaetze(os.path.join(roh, "dlm", "dlm250_ebenen"), os.path.join(roh, "oa"), h, _j.load(open(ofm_ad)) if ofm_ad else None)
+    P = DA.plaetze(os.path.join(roh, "dlm", "dlm250_ebenen"), os.path.join(roh, "oa"), None, _j.load(open(ofm_ad)) if ofm_ad else None)
     _j.dump(P, open(os.path.join(arbeit, f"plaetze_{zk}.json"), "w", encoding="utf-8"), ensure_ascii=False)
     kach = os.path.join(arbeit, f"kacheln_{zk}")
     args = ["--arbeit", arbeit, "--zyklus", zk, "--aus", kach, "--zoom", str(zoom[0]), str(zoom[1]), "--prozesse", str(prozesse)]
@@ -163,11 +162,12 @@ def veroeffentlichen(aus: str):
     # Bündel abgelaufener Zyklen entfernen (zwei Tage nach dem Ende, damit Server mit altem Verzeichnis nicht ins Leere greifen)
     behalten = {n for z in v["zyklen"] for n in z["dateien"]}
     r = subprocess.run(["gh", "release", "view", TAG, "--json", "assets", "--jq", ".assets[].name"], capture_output=True, text=True, check=True)
-    grenze = (dt.date.today() - dt.timedelta(days=30 + 2)).strftime("%y%m")
+    from ..luftraum import zyklus as _zyklus
+    grenze = _zyklus(dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2))[0]   # laufender Zyklus vor zwei Tagen
     for n in r.stdout.split():
         if n.startswith("karte-") and n.endswith(".bin") and n not in behalten:
             zk = n.split("-")[1]
-            if zk.isdigit() and zk < grenze:
+            if zk.isdigit() and len(zk) == 4 and zk < grenze:
                 subprocess.run(["gh", "release", "delete-asset", TAG, n, "--yes"], check=False)
                 log(f"entfernt: {n}")
 

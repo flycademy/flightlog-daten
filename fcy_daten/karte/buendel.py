@@ -52,7 +52,7 @@ def schreibe(pfad, kopf, kacheln):
             gitter[name]["ab"] = pos; pos += 8 * len(liste)
         kopf["gitter"] = gitter
     kb = json.dumps(kopf, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    assert len(kb) < 65536, len(kb)
+    assert len(kb) < 8192, len(kb)                       # dienst.php liest Köpfe bis 8 KB
     pos = 8 + len(kb)
     for name, liste in eintraege:
         assert gitter[name]["ab"] == pos, (name, gitter[name]["ab"], pos); pos += 8 * len(liste)

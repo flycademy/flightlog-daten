@@ -1,5 +1,5 @@
-"""Flugplätze aus open flightmaps (OFMX) für die ICAO-Optik: Frequenz des Platzes (TWR, sonst INFO/RADIO, sonst andere)
-und Pisten (Länge, Belag, rechtweisende Richtung). Lizenz: OFMA General Users' License (openflightmaps.org/about).
+"""Flugplätze aus open flightmaps (OFMX) für die ICAO-Optik: Frequenz des Platzes (TWR, sonst INFO/RADIO, sonst andere),
+Platzhöhe und Pisten (Länge, Belag, rechtweisende Richtung). Lizenz: OFMA General Users' License (openflightmaps.org/about).
 
 Aufruf: python -m fcy_daten.karte.ofm --zyklus 2611 --aus <ofm_plaetze.json> [--roh <OFMX-Datei speichern>] [--ofmx <OFMX von Platte>]
 """
@@ -31,7 +31,7 @@ def _t(el, pfad):
 
 
 def lies(ofmx: bytes) -> dict:
-    """→ {ICAO: {mhz, ruf, pisten: [{laenge_m, fest, kurs_rw}]}}"""
+    """→ {ICAO: {mhz, ruf, art, hoehe_ft, pisten: [{laenge_m, fest, kurs_rw}]}}"""
     root = ET.fromstring(ofmx)
     uni_ahp = {}                                   # Dienststelle (Unit) → Platz
     for u in root.iter("Uni"):
@@ -99,6 +99,16 @@ def lies(ofmx: bytes) -> dict:
     for (ahp, _), v in rwy.items():
         if v["laenge_m"] > 0:
             out.setdefault(ahp, {"pisten": []})["pisten"].append(v)
+    for a in root.iter("Ahp"):                     # Platzhöhe (AIXM 4.5: valElev, uomDistVer)
+        code = _t(a, "AhpUid/codeId")
+        try:
+            h = float(_t(a, "valElev"))
+        except ValueError:
+            continue
+        if code:
+            if _t(a, "uomDistVer").upper() == "M":
+                h /= 0.3048
+            out.setdefault(code, {"pisten": []})["hoehe_ft"] = int(round(h))
     for e in out.values():
         e.pop("rang", None)
     return out
@@ -115,7 +125,8 @@ def main(argv=None) -> int:
     P = lies(d)
     json.dump(P, open(a.aus, "w", encoding="utf-8"), ensure_ascii=False)
     mit = sum(1 for e in P.values() if e.get("mhz"))
-    print(f"open flightmaps {a.zyklus}: {len(P)} Plätze, davon {mit} mit Frequenz, {sum(len(e['pisten']) for e in P.values())} Pisten; "
+    print(f"open flightmaps {a.zyklus}: {len(P)} Plätze, davon {mit} mit Frequenz, {sum(1 for e in P.values() if e.get('hoehe_ft') is not None)} "
+          f"mit Höhe, {sum(len(e['pisten']) for e in P.values())} Pisten; "
           f"EDVE: {P.get('EDVE')}", flush=True)
     return 0
 

@@ -2,14 +2,14 @@
 
   topo.pkl     Ebenen aus dem BKG DLM250 (Wald, Ortslagen, Gewässer, Straßen, Bahn, Bahnhöfe, Pisten) und der Umriss
                Deutschlands (AX_Gebiet_Nationalstaat), alles in Web-Mercator (EPSG:3857, Meter)
-  plaetze.json Flugplätze: Lage, Kennung, Name und Art aus dem BKG DLM250; Höhe aus der Platzliste des Flight Log
-               (dieselbe Zahl, mit der der Flight Log rechnet), sonst OurAirports; Pisten und Frequenz aus open flightmaps
-               (falls übergeben), sonst OurAirports
+  plaetze.json Flugplätze: Lage, Kennung, Name und Art aus dem BKG DLM250; Höhe, Pisten und Frequenz aus open flightmaps
+               (falls übergeben), sonst OurAirports. Keine Zahlen aus der AIP VFR (deren Nutzung ist bei der DFS zu erfragen; die
+               Kacheln liegen öffentlich im Release). --hoehen nur für Vergleiche von Hand.
   dgm200.npz   Geländehöhen 200 m (BKG DGM200) für Höhenpunkte und MEF, wie auf der Übungskarte
 
 Quellen: © GeoBasis-DE / BKG (2026) dl-de/by-2-0 (Daten verändert); OurAirports (gemeinfrei); open flightmaps (OFMA GUL).
 Aufruf: python -m fcy_daten.karte.daten --dlm <dlm250_ebenen> --dgm <dgm200_utm32s.tif> --oa <Ordner OurAirports>
-        --hoehen <platzhoehen.json> [--ofm-ad <ofm_plaetze.json>] --aus <Arbeitsordner>
+        [--ofm-ad <ofm_plaetze.json>] [--hoehen <Höhen.json>] --aus <Arbeitsordner>
 """
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def _oa_frequenz(liste) -> str:
     return f"{f:.3f}"
 
 
-def plaetze(dlm: str, oa_dir: str, hoehen: dict, ofm_ad: dict | None = None) -> list[dict]:
+def plaetze(dlm: str, oa_dir: str, hoehen: dict | None = None, ofm_ad: dict | None = None) -> list[dict]:
     bkg = []
     g, p = lies(dlm, "ver04_f", ["ART", "BEZ", "NAM", "NTZ", "ZUS"])
     for x, pp in zip(g, p):
@@ -167,11 +167,13 @@ def plaetze(dlm: str, oa_dir: str, hoehen: dict, ofm_ad: dict | None = None) -> 
         lon, lat = M2L.transform(pt.x, pt.y)
         q = {"kennung": code, "name": name, "art": art, "x": pt.x, "y": pt.y, "lon": round(lon, 5), "lat": round(lat, 5),
              "mil": code.startswith("ET") or pp.get("NTZ") == "3000", "hoehe_ft": None, "mhz": "", "pisten": [], "quelle_hoehe": ""}
-        if code in hoehen:
-            q["hoehe_ft"] = int(hoehen[code]); q["quelle_hoehe"] = "Flight Log"
+        o = (ofm_ad or {}).get(code)
+        if hoehen and code in hoehen:
+            q["hoehe_ft"] = int(hoehen[code]); q["quelle_hoehe"] = "von Hand"
+        elif o and o.get("hoehe_ft") is not None:
+            q["hoehe_ft"] = int(o["hoehe_ft"]); q["quelle_hoehe"] = "open flightmaps"
         elif oa and oa["elevation_ft"]:
             q["hoehe_ft"] = int(round(float(oa["elevation_ft"]))); q["quelle_hoehe"] = "OurAirports"
-        o = (ofm_ad or {}).get(code)
         if o:
             q["mhz"] = o.get("mhz") or ""
             q["pisten"] = o.get("pisten") or []
@@ -204,15 +206,15 @@ def dgm(pfad: str) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dlm", required=True); ap.add_argument("--dgm", required=True); ap.add_argument("--oa", required=True)
-    ap.add_argument("--hoehen", required=True); ap.add_argument("--ofm-ad"); ap.add_argument("--aus", required=True)
+    ap.add_argument("--hoehen"); ap.add_argument("--ofm-ad"); ap.add_argument("--aus", required=True)
     a = ap.parse_args(argv)
     os.makedirs(a.aus, exist_ok=True)
     T = topo(a.dlm)
     with open(os.path.join(a.aus, "topo.pkl"), "wb") as f:
         pickle.dump(T, f, protocol=pickle.HIGHEST_PROTOCOL)
     print("Topografie:", {k: (len(v) if isinstance(v, list) else v.geom_type) for k, v in T.items()}, flush=True)
-    h = json.load(open(a.hoehen, encoding="utf-8"))
-    h = h.get("hoehen", h)
+    h = json.load(open(a.hoehen, encoding="utf-8")) if a.hoehen else None
+    h = h.get("hoehen", h) if h else None
     ofm = json.load(open(a.ofm_ad, encoding="utf-8")) if a.ofm_ad else None
     P = plaetze(a.dlm, a.oa, h, ofm)
     json.dump(P, open(os.path.join(a.aus, "plaetze.json"), "w", encoding="utf-8"), ensure_ascii=False)
