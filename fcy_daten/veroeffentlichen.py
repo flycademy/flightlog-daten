@@ -1,6 +1,9 @@
 """Ergebnisdatei für den Flight Log veröffentlichen: als Download im Release „daten“ dieses Repositorys.
 
-  python -m fcy_daten.veroeffentlichen out/wind.bin
+  python -m fcy_daten.veroeffentlichen out/wind.bin [--nur-neue-fassung]
+
+--nur-neue-fassung (Wind, stündlich geplant ab 18.11.2026): Ist dieselbe Fassung (beim Wind der Modelllauf) für denselben
+Schlüssel schon im Release, lädt der Job nichts hoch; die Beschreibung legt er nur lokal ab (für das Lebenszeichen).
 
 Verschlüsselt (ab Build 25y, Accountable Manager 17.11.2026): Steht der öffentliche Schlüssel des Servers in fcy_daten/schluessel.pub,
 legt der Job <datei>.v (siehe fcy_daten/schloss.py) und <datei>.v.json ab (Größe und SHA-256 der verschlüsselten Datei und
@@ -60,6 +63,18 @@ def beschreibung(pfad: str) -> dict:
             "veroeffentlicht": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
+def _veroeffentlicht(repo: str, name: str) -> dict | None:
+    """Beschreibung, die gerade im Release liegt (None, wenn es sie nicht gibt)."""
+    r = _gh("release", "download", TAG, "-R", repo, "-p", name, "-O", "-", pruefen=False)
+    if r.returncode != 0:
+        return None
+    try:
+        j = json.loads(r.stdout)
+    except ValueError:
+        return None
+    return j if isinstance(j, dict) else None
+
+
 def offen() -> bool:
     return os.environ.get("FCY_OFFEN", "").strip().lower() != "nein"
 
@@ -69,7 +84,9 @@ def _gh(*args: str, pruefen: bool = True) -> subprocess.CompletedProcess:
 
 
 def main(argv=None) -> int:
-    argv = argv or sys.argv[1:]
+    argv = list(argv or sys.argv[1:])
+    nur_neu = "--nur-neue-fassung" in argv
+    argv = [a for a in argv if a != "--nur-neue-fassung"]
     if len(argv) != 1:
         print(__doc__)
         return 2
@@ -79,6 +96,19 @@ def main(argv=None) -> int:
     if pk is None and not offen():
         raise SystemExit("weder offen (FCY_OFFEN = nein) noch verschlüsselt (kein Schlüssel in fcy_daten/schluessel.pub)")
     repo = os.environ.get("GITHUB_REPOSITORY", "flycademy/flightlog-daten")
+    if nur_neu and b["fassung"]:
+        gleich = True
+        if pk is not None:
+            a = _veroeffentlicht(repo, b["datei"] + ".v.json")
+            gleich = gleich and bool(a) and a.get("fassung") == b["fassung"] and a.get("schluessel") == S.fp_hex(pk)
+        if gleich and offen():
+            a = _veroeffentlicht(repo, b["datei"] + ".json")
+            gleich = bool(a) and a.get("fassung") == b["fassung"]
+        if gleich:
+            with open(pfad + ".json", "w", encoding="utf-8") as f:
+                json.dump(b, f, ensure_ascii=False)
+            print(f"unverändert: {b['datei']} Fassung {b['fassung']} liegt schon im Release — nichts hochgeladen")
+            return 0
     if _gh("release", "view", TAG, "-R", repo, pruefen=False).returncode != 0:
         r = _gh("release", "create", TAG, "-R", repo, "--title", "Daten für den Flight Log", "--notes", NOTIZ_V + NOTIZ,
                 "--latest=false", pruefen=False)

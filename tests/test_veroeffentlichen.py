@@ -105,6 +105,60 @@ def test_verschluesselt():
         print("ok: Veröffentlichen (verschlüsselt, Übergang und nur verschlüsselt)")
 
 
+def test_nur_neue_fassung():
+    """Wind stündlich (18.11.2026): liegt dieselbe Fassung für denselben Schlüssel schon im Release, wird nichts hochgeladen;
+    eine neue Fassung, ein anderer Schlüssel oder eine fehlende Beschreibung führen zum Hochladen."""
+    with tempfile.TemporaryDirectory() as tmp:
+        datei = os.path.join(tmp, "orte.bin")
+        F.schreibe_orte(datei, {"quelle": "Test", "erzeugt": "2026-11-18T09:00:00Z"},
+                        [("braunschweig", "1", "Braunschweig", "Niedersachsen", "DE", 52.26, 10.52, 248292, "P", 0)])
+        S.main(["neu", os.path.join(tmp, "k")])
+        fp = S.fp_hex(S.oeffentlich_laden(os.path.join(tmp, "k", "oeffentlich.txt")))
+        alt = dict(os.environ)
+        os.environ["PATH"] = tmp + os.pathsep + alt["PATH"]
+        os.environ["FCY_SCHLUESSEL"] = os.path.join(tmp, "k", "oeffentlich.txt")
+        os.environ["FCY_OFFEN"] = ""
+        try:
+            for name, im_release, erwartet in (
+                    ("gleich", {"orte.bin.v.json": {"fassung": "2026-11-18T09:00:00Z", "schluessel": fp},
+                                "orte.bin.json": {"fassung": "2026-11-18T09:00:00Z"}}, []),
+                    ("neu", {"orte.bin.v.json": {"fassung": "2026-11-18T06:00:00Z", "schluessel": fp},
+                             "orte.bin.json": {"fassung": "2026-11-18T06:00:00Z"}}, ["orte.bin.v", "orte.bin.v.json", "orte.bin", "orte.bin.json"]),
+                    ("anderer Schlüssel", {"orte.bin.v.json": {"fassung": "2026-11-18T09:00:00Z", "schluessel": "0" * 32},
+                                           "orte.bin.json": {"fassung": "2026-11-18T09:00:00Z"}}, ["orte.bin.v", "orte.bin.v.json", "orte.bin", "orte.bin.json"]),
+                    ("fehlt", {}, ["orte.bin.v", "orte.bin.v.json", "orte.bin", "orte.bin.json"])):
+                protokoll = os.path.join(tmp, "gh.log")
+                if os.path.exists(protokoll):
+                    os.remove(protokoll)
+                gh = os.path.join(tmp, "gh"); rel = os.path.join(tmp, "rel"); os.makedirs(rel, exist_ok=True)
+                for f_ in os.listdir(rel):
+                    os.remove(os.path.join(rel, f_))
+                for n_, j_ in im_release.items():
+                    json.dump(j_, open(os.path.join(rel, n_), "w"))
+                with open(gh, "w") as f:      # „release download … -p NAME -O -“ gibt die Beschreibung aus dem Release aus
+                    f.write("#!/bin/sh\necho \"$*\" >> %s\n"
+                            "if [ \"$1 $2\" = \"release download\" ]; then [ -f \"%s/$7\" ] && cat \"%s/$7\" && exit 0; exit 1; fi\nexit 0\n"
+                            % (protokoll, rel, rel))
+                os.chmod(gh, os.stat(gh).st_mode | stat.S_IEXEC)
+                for x in ("orte.bin.json", "orte.bin.v", "orte.bin.v.json"):
+                    if os.path.exists(os.path.join(tmp, x)):
+                        os.remove(os.path.join(tmp, x))
+                assert V.main([datei, "--nur-neue-fassung"]) == 0
+                hoch = [os.path.basename(z.split(" ")[3]) for z in open(protokoll).read().splitlines() if z.startswith("release upload")]
+                assert hoch == erwartet, (name, hoch)
+                assert os.path.exists(datei + ".json")       # Beschreibung für das Lebenszeichen auch ohne Hochladen
+            # ohne die Option immer hochladen
+            os.remove(protokoll)
+            json.dump({"fassung": "2026-11-18T09:00:00Z", "schluessel": fp}, open(os.path.join(rel, "orte.bin.v.json"), "w"))
+            json.dump({"fassung": "2026-11-18T09:00:00Z"}, open(os.path.join(rel, "orte.bin.json"), "w"))
+            assert V.main([datei]) == 0
+            assert len([z for z in open(protokoll).read().splitlines() if z.startswith("release upload")]) == 4
+        finally:
+            os.environ.clear(); os.environ.update(alt)
+        print("ok: Veröffentlichen nur bei neuer Fassung")
+
+
 if __name__ == "__main__":
     test_veroeffentlichen()
     test_verschluesselt()
+    test_nur_neue_fassung()

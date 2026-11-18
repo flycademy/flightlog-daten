@@ -1,6 +1,6 @@
 # Höhenwind und Modellwetter aus DWD ICON-D2 — neue Modellläufe alle 3 Stunden, jeweils rund 2¼ Stunden nach Laufbeginn verfügbar.
 # Geplant stündlich (Accountable Manager 18.11.2026): GitHub lässt geplante Läufe oft ausfallen oder verschiebt sie; so kommt jeder
-# Modelllauf trotzdem bald an. Läufe ohne neuen Modelllauf veröffentlichen denselben Inhalt; der Server holt dann nur die Beschreibung.
+# Modelllauf trotzdem bald an. Läufe ohne neuen Modelllauf laden nichts hoch (--nur-neue-fassung).
 name: Wind ICON-D2
 on:
   schedule:
@@ -48,7 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FCY_OFFEN: ${{ vars.FCY_OFFEN }}
-        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/wind.bin
+        run: bash werkzeug/lauf.sh python -m fcy_daten.veroeffentlichen out/wind.bin --nur-neue-fassung
       - name: Lebenszeichen
         # GitHub schaltet Zeitpläne in öffentlichen Repositorys nach 60 Tagen ohne Änderung ab; ein kleiner Stand im
         # Zweig „stand“ (ersetzt sich jedes Mal selbst) zählt als Änderung.
