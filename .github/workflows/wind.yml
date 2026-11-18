@@ -1,8 +1,10 @@
-# Höhenwind und Modellwetter aus DWD ICON-D2 — alle 3 Stunden, rund 2¼ Stunden nach Laufbeginn
+# Höhenwind und Modellwetter aus DWD ICON-D2 — neue Modellläufe alle 3 Stunden, jeweils rund 2¼ Stunden nach Laufbeginn verfügbar.
+# Geplant stündlich (Accountable Manager 18.11.2026): GitHub lässt geplante Läufe oft ausfallen oder verschiebt sie; so kommt jeder
+# Modelllauf trotzdem bald an. Läufe ohne neuen Modelllauf veröffentlichen denselben Inhalt; der Server holt dann nur die Beschreibung.
 name: Wind ICON-D2
 on:
   schedule:
-    - cron: "17 2,5,8,11,14,17,20,23 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       veroeffentlichen:
