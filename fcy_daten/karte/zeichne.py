@@ -33,6 +33,7 @@ from matplotlib.transforms import IdentityTransform  # noqa: E402
 import shapely  # noqa: E402
 from shapely.affinity import scale as sk_scale  # noqa: E402
 from shapely.geometry import Point, Polygon, box  # noqa: E402
+from shapely.geometry.polygon import orient  # noqa: E402
 from shapely.prepared import prep  # noqa: E402
 from shapely.strtree import STRtree  # noqa: E402
 
@@ -285,7 +286,10 @@ class Karte:
         self.isogonen()
         self.mef()
         self.gradnetz()
-        print(f"  z{z}: Szene {len(self.S.ops)} Befehle, {self.B.n} Beschriftungen/Belegungen, {time.time() - t0:.0f} s", flush=True)
+        ks = getattr(self, "kaesten_stat", {})
+        print(f"  z{z}: Szene {len(self.S.ops)} Befehle, {self.B.n} Beschriftungen/Belegungen, Luftraumkästen {ks.get('kaesten', 0)} "
+              f"(Lufträume {ks.get('luftraeume', 0)}: an der Grenze {ks.get('an_grenze', 0)}, davon außen {ks.get('aussen', 0)}, innen {ks.get('innen', 0)}, ohne {ks.get('ohne', 0)}), "
+              f"{time.time() - t0:.0f} s", flush=True)
         return self.S
 
     def _im(self, g):
@@ -392,8 +396,10 @@ class Karte:
         for q in P:
             x, y = self.pu(q["x"], q["y"]); self.B.add((x - 1700, y - 1700, x + 1700, y + 1700))
         if self.z >= 10:
-            for m in self.D["L"]["meldepunkte"]:
-                x, y = self.pu(m["x"], m["y"]); self.B.add((x - 700, y - 700, x + 700, y + 800))
+            for m in self.D["L"]["meldepunkte"]:                    # ganzer Kreis um das Dreieck (Radius 1150)
+                x, y = self.pu(m["x"], m["y"]); self.B.add((x - 1250, y - 1250, x + 1250, y + 1250))
+            for h in self.D["L"]["hindernisse"]:                     # Hinderniszeichen nie unter einem Luftraumkasten
+                x, y = self.pu(h["x"], h["y"]); self.B.add((x - 750, y - 650, x + 750, y + 950))
         for e in self.D["L"]["funkfeuer"]:
             if e["art"] in ("VOR", "NDB"):
                 x, y = self.pu(e["x"], e["y"]); self.B.add((x - 1800, y - 1800, x + 1800, y + 1800))
@@ -422,51 +428,132 @@ class Karte:
             if q.geom_type == "Polygon":
                 self.linie(np.asarray(q.exterior.coords)[:, :2], z, {"color": farbe, "linewidth": lw, "linestyle": ls})
 
-    def kasten(self, g, klasse, ob, un, farbe, kopf=None, rahmen=True, fs=5.9):
-        z = self.z
-        if z <= 9 and klasse not in ("C", "D") and not str(kopf or "").startswith(("ED-R", "ED-P")):
-            return
-        ziel = g.intersection(self.INNEN2)
-        if ziel.is_empty:
-            return
-        G = 1500 * PT / PXPT[z]                       # weitere Kästen in großen Lufträumen, etwa alle 1500 CSS-Bildpunkte
-        punkte = [(ziel.representative_point(), True)]
-        if ziel.area > 4 * G * G:
-            x0, y0, x1, y1 = ziel.bounds
-            for gx in np.arange(math.floor(x0 / G) * G, x1, G):
-                for gy in np.arange(math.floor(y0 / G) * G, y1, G):
-                    t = ziel.intersection(box(gx, gy, gx + G, gy + G))
-                    if not t.is_empty and t.area > 0.3 * G * G and not t.contains(punkte[0][0]):
-                        punkte.append((t.representative_point(), False))
+    # Beschriftung der Lufträume (Accountable Manager 18.11.2026): Kästen an der Grenze, innen, entlang der Grenze wiederholt
+    # (etwa alle ABSTAND_KASTEN CSS-Bildpunkte, damit beim Hineinzoomen einer im Bild bleibt), nie über Meldepunkten,
+    # Hindernissen, Plätzen, Funkfeuern oder anderen Kästen. Passt an der Grenze keiner, innen an freier Stelle; sonst keiner.
+    ABSTAND_KASTEN = {8: 1400, 9: 1300, 10: 1000, 11: 800, 12: 500}
+
+    def kasten_mass(self, klasse, ob, un, kopf, fs=5.9):
         zh = fs * 1.18 * PT; fk = fs * 1.35 if not klasse or len(klasse) == 1 else fs * 1.08
         wk = (len(klasse) * fk * 0.62 * PT + 0.5 * fs * PT) if klasse else 0
         wl = max(len(ob), len(un), len(kopf or "")) * fs * 0.50 * PT + 0.7 * fs * PT
-        zeilen = 2 + (1 if kopf else 0); w, h = wk + wl, zeilen * zh + 0.35 * fs * PT
-        for p, pflicht in punkte:
-            bb = None
-            for dx, dy in ((0, 0), (0, 5000), (0, -5000), (6000, 0), (-6000, 0), (6000, 6000), (-6000, -6000), (0, 10000), (0, -10000)):
-                b = (p.x + dx - w / 2, p.y + dy - h / 2, p.x + dx + w / 2, p.y + dy + h / 2)
-                if self.innen(b) and self.B.frei(b):
-                    bb = b; break
-            if bb is None:
-                if not pflicht:
-                    continue
-                bb = b
-            self.B.add(bb); x, y = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
-            xa, ya = bb[0], bb[1]
-            halo = None if rahmen else [(2.0, "white")]
+        zeilen = 2 + (1 if kopf else 0)
+        return wk, wl, zh, fk, wk + wl, zeilen * zh + 0.35 * fs * PT
+
+    def kasten_zeichnen(self, bb, klasse, ob, un, farbe, kopf=None, rahmen=True, fs=5.9):
+        wk, wl, zh, fk, w, h = self.kasten_mass(klasse, ob, un, kopf, fs)
+        y = (bb[1] + bb[3]) / 2
+        xa, ya = bb[0], bb[1]
+        halo = None if rahmen else [(2.0, "white")]
+        if rahmen:
+            self.patch("rect", (xa, ya, w, h), 9, {"fc": "white", "ec": farbe, "lw": 0.8}, bb)
+        if klasse:
+            self.text(xa + wk / 2, y, klasse, fk, 9.1, "center", "center", color=farbe, weight="bold", fontfamily=SCHMAL)
             if rahmen:
-                self.patch("rect", (xa, ya, w, h), 9, {"fc": "white", "ec": farbe, "lw": 0.8}, bb)
-            if klasse:
-                self.text(xa + wk / 2, y, klasse, fk, 9.1, "center", "center", color=farbe, weight="bold", fontfamily=SCHMAL)
-                if rahmen:
-                    self.plot([xa + wk, xa + wk], [ya, ya + h], 9.1, {"color": farbe, "lw": 0.6})
-            xl = xa + wk + wl / 2; yt = ya + h - 0.175 * fs * PT
-            zt = ([kopf] if kopf else []) + [ob, un]
-            for i, tx in enumerate(zt):
-                self.text(xl, yt - (i + 0.5) * zh, tx, fs, 9.1, "center", "center", halo=halo, color=farbe, weight="bold", fontfamily=SCHMAL)
-            yb = yt - (len(zt) - 1) * zh
-            self.plot([xl - wl / 2 + 0.25 * fs * PT, xl + wl / 2 - 0.25 * fs * PT], [yb, yb], 9.1, {"color": farbe, "lw": 0.6})
+                self.plot([xa + wk, xa + wk], [ya, ya + h], 9.1, {"color": farbe, "lw": 0.6})
+        xl = xa + wk + wl / 2; yt = ya + h - 0.175 * fs * PT
+        zt = ([kopf] if kopf else []) + [ob, un]
+        for i, tx in enumerate(zt):
+            self.text(xl, yt - (i + 0.5) * zh, tx, fs, 9.1, "center", "center", halo=halo, color=farbe, weight="bold", fontfamily=SCHMAL)
+        yb = yt - (len(zt) - 1) * zh
+        self.plot([xl - wl / 2 + 0.25 * fs * PT, xl + wl / 2 - 0.25 * fs * PT], [yb, yb], 9.1, {"color": farbe, "lw": 0.6})
+
+    def kasten(self, g, klasse, ob, un, farbe, kopf=None, rahmen=True, fs=5.9, prio=5):
+        """Kasten vormerken; gesetzt werden alle zusammen in kaesten_setzen (kleine und wichtige Lufträume zuerst)."""
+        z = self.z
+        if z <= 9 and klasse not in ("C", "D") and not str(kopf or "").startswith(("ED-R", "ED-P")):
+            return
+        self._kaesten.append({"g": g, "args": (klasse, ob, un, farbe, kopf, rahmen, fs), "prio": prio})
+
+    @staticmethod
+    def _ringe(g):
+        for q in getattr(g, "geoms", [g]):
+            if q.geom_type == "Polygon" and not q.is_empty:
+                q = orient(q, 1.0)          # außen gegen den Uhrzeigersinn: innen liegt links
+                yield np.asarray(q.exterior.coords)[:, :2]
+
+    def kaesten_setzen(self):
+        z = self.z
+        K = sorted(self._kaesten, key=lambda k: (k["prio"], k["g"].area))
+        if not K:
+            return
+        S_ = self.ABSTAND_KASTEN[z] * PT / PXPT[z]                    # Abstand der Wiederholungen in Kartenmetern
+        linien = [];  eigen = []
+        for i, k in enumerate(K):
+            for r in self._ringe(k["g"]):
+                linien.append(shapely.LineString(r)); eigen.append(i)
+        baum = STRtree(linien); eigen = np.asarray(eigen)
+        luecke = 0.45 * 5.9 * PT                                        # Abstand Kasten – Grenzlinie
+        self.kaesten_ohne = []
+        self.kaesten_stat = {"luftraeume": len(K), "an_grenze": 0, "aussen": 0, "innen": 0, "ohne": 0, "kaesten": 0}
+
+        def kreuzt(b, i):
+            for j in baum.query(box(*b), predicate="intersects"):
+                if eigen[j] != i:
+                    return True
+            return False
+
+        for i, k in enumerate(K):
+            g = k["g"]; klasse, ob, un, farbe, kopf, rahmen, fs = k["args"]
+            w, h = self.kasten_mass(klasse, ob, un, kopf, fs)[4:]
+            gp = prep(g.buffer(-0.15 * fs * PT)); gaus = prep(g.buffer(0.15 * fs * PT))
+            gesetzt = []
+
+            def gut(b, streng, seite):
+                bb_ = box(*b)
+                return (self.innen(b) and (gp.contains(bb_) if seite > 0 else not gaus.intersects(bb_)) and self.B.frei(b)
+                        and all(math.hypot((b[0] + b[2]) / 2 - c[0], (b[1] + b[3]) / 2 - c[1]) >= 0.8 * S_ for c in gesetzt)
+                        and (not streng or not kreuzt(b, i)))
+
+            # innen an der Grenze: erst Stellen ohne fremde Grenzlinie im Kasten, dann Lücken (≥ 0,8 Abstände zum nächsten
+            # Kasten) auch mit; nur wenn innen nirgends Platz ist, ein Kasten außen an der Grenze
+            for seite, streng in ((1, True), (1, False), (-1, True), (-1, False)):
+                if seite < 0 and gesetzt:
+                    break
+                for r in self._ringe(g):
+                    seg = np.diff(r, axis=0); lg = np.hypot(seg[:, 0], seg[:, 1]); ges = float(lg.sum())
+                    if ges <= 0 or (seite > 0 and ges < 2 * max(w, h)):
+                        continue
+                    kum = np.concatenate([[0.0], np.cumsum(lg)])
+                    schritt = max(min(S_ / 8, ges / 16), 0.25 * min(w, h))
+                    letzt = -1e18
+                    for s_ in np.arange(0.5 * schritt, ges, schritt):
+                        if s_ - letzt < S_ or (seite < 0 and gesetzt):         # außen nur ein Kasten
+                            continue
+                        j = int(np.searchsorted(kum, s_, side="right") - 1); j = min(max(j, 0), len(seg) - 1)
+                        if lg[j] <= 0:
+                            continue
+                        t = seg[j] / lg[j]; n = seite * np.array([-t[1], t[0]])   # innen: links der Laufrichtung
+                        p = r[j] + t * (s_ - kum[j])
+                        # Kasten an der Grenze: Mitte so weit von der Linie, dass die nächste Kante die Lücke hält
+                        halb = 0.5 * w * abs(n[0]) + 0.5 * h * abs(n[1])
+                        for versatz in (0.0, 0.5, -0.5):                    # auch etwas entlang der Grenze verschoben
+                            c = p + n * (luecke + halb) + t * versatz * max(w, h)
+                            b = (c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2)
+                            if gut(b, streng, seite):
+                                self.B.add(b); gesetzt.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+                                self.kasten_zeichnen(b, klasse, ob, un, farbe, kopf, rahmen, fs)
+                                letzt = s_
+                                if seite < 0:
+                                    self.kaesten_stat["aussen"] += 1
+                                break
+            if gesetzt:
+                self.kaesten_stat["an_grenze"] += 1
+            else:
+                ziel = g.intersection(self.INNEN2)
+                if not ziel.is_empty:
+                    p = ziel.representative_point()
+                    for dx, dy in ((0, 0), (0, 5000), (0, -5000), (6000, 0), (-6000, 0), (6000, 6000), (-6000, -6000), (0, 10000), (0, -10000)):
+                        b = (p.x + dx - w / 2, p.y + dy - h / 2, p.x + dx + w / 2, p.y + dy + h / 2)
+                        if gut(b, False, 1):
+                            self.B.add(b); gesetzt.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+                            self.kasten_zeichnen(b, klasse, ob, un, farbe, kopf, rahmen, fs)
+                            self.kaesten_stat["innen"] += 1
+                            break
+                if not gesetzt:
+                    self.kaesten_stat["ohne"] += 1
+                    c_ = g.representative_point(); self.kaesten_ohne.append((kopf or klasse, ob, un, c_.x * self.SK, c_.y * self.SK, g.area))
+            self.kaesten_stat["kaesten"] += len(gesetzt)
 
     def fallschirm(self, x, y, r, ry=None):
         ry = r if ry is None else ry
@@ -482,6 +569,7 @@ class Karte:
         return f"{t}{sep}(HX)" if p.get("zeit") in ZEIT_HX else t
 
     def luftraeume(self):
+        self._kaesten = []
         L = [(shapely.simplify(self.u(g), self.tol, preserve_topology=True), p) for g, p in self.D["L"]["luftraeume"] if self._im(g)]
         for g, p in L:
             t, lt, kl = p.get("typ"), p.get("lokal"), p.get("klasse")
@@ -499,28 +587,28 @@ class Karte:
             unten_fl = (p.get("unten") or {}).get("bezug") == "STD" and float(p["unten"]["wert"]) >= 100
             if t in ("CTR", "CTR_P"):
                 self.umriss(g, C_BLAU, 1.7, (0, (4.5, 2)))
-                self.kasten(g, self.mit_hx("D", p), ob, un, C_BLAU)
+                self.kasten(g, self.mit_hx("D", p), ob, un, C_BLAU, prio=1)
             elif t == "CLASS" and kl in ("C", "D") and not unten_fl:
                 self.umriss(g, C_BLAU, 0.9)
-                self.kasten(g, self.mit_hx(kl, p), ob, un, C_BLAU)
+                self.kasten(g, self.mit_hx(kl, p), ob, un, C_BLAU, prio=3)
             elif t == "CLASS" and kl == "E" and un in ("1000 AGL", "1700 AGL"):
                 self.umriss(g, E_BLAU, 0.9)
-                self.kasten(g, "E", ob, un, C_BLAU)
+                self.kasten(g, "E", ob, un, C_BLAU, prio=6)
             elif t == "RAS" and lt == "TMZ":
                 self.umriss(g, TMZ_GRAU, 2.6, (0, (5.5, 1.8, 1.3, 1.8)))
-                self.kasten(g, None, ob, un, "#1a1a1a", kopf=self.mit_hx("TMZ", p, " "), rahmen=False)
+                self.kasten(g, None, ob, un, "#1a1a1a", kopf=self.mit_hx("TMZ", p, " "), rahmen=False, prio=5)
             elif t == "RAS" and lt == "RMZ":
                 self.umriss(g, C_BLAU, 1.5, (0, (4.5, 2)))
-                self.kasten(g, None, ob, un, C_BLAU, kopf=self.mit_hx("RMZ", p, " "))
+                self.kasten(g, None, ob, un, C_BLAU, kopf=self.mit_hx("RMZ", p, " "), prio=4)
             elif t == "RAS" and lt == "ATZ":
                 self.umriss(g, C_BLAU, 1.3, (0, (0.6, 1.5)))
-                self.kasten(g, None, ob, un, C_BLAU, kopf="ATZ")
+                self.kasten(g, None, ob, un, C_BLAU, kopf="ATZ", prio=1)
             elif t in ("OTHER:R_AMC", "R", "P") and (p.get("unten") or {}).get("bezug") == "SFC":
                 self.band(g, 1300, 6, {"facecolor": "none", "edgecolor": R_ROT, "hatch": "////", "linewidth": 0})
                 self.umriss(g, R_ROT, 1.0)
                 m = re.match(r"ED([RPD])(.*)", p.get("kennung", "") or "")
                 kopf = f"ED-{m.group(1)} {m.group(2).strip()}" if m else (p.get("kennung") or "ED-R")
-                self.kasten(g, None, ob, un, R_ROT, kopf=kopf)
+                self.kasten(g, None, ob, un, R_ROT, kopf=kopf, prio=2)
             elif t == "A" and lt == "PJA":
                 cp = g.centroid
                 self.patch("circle", (cp.x, cp.y, 2500), 9, {"fill": False, "ec": PJA_ROT, "lw": 1.6, "ls": (0, (0.5, 1.6)), "capstyle": "round"},
@@ -533,6 +621,7 @@ class Karte:
             elif t == "A" and lt == "ACR":
                 cp = g.centroid
                 self.text(cp.x, cp.y, "✈", 11, 9, "center", "center", rotation=35, color=PJA_ROT, fontfamily="DejaVu Sans")
+        self.kaesten_setzen()
 
     # ---------- Hindernisse ----------
     def hindernisse(self):
